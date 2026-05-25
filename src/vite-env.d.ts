@@ -13,9 +13,17 @@ type QortiumAccountsState = {
   activeAccountId: string | null;
 };
 
-type QortiumLoadWalletResult = QortiumAccountsState & {
-  canceled: boolean;
-};
+type QortiumSelectWalletResult =
+  | {
+      canceled: true;
+    }
+  | {
+      accountId: string;
+      address: string;
+      canceled: false;
+      suggestedName: string;
+      token: string;
+    };
 
 type QortiumCreateWalletResult = QortiumAccountsState & {
   canceled: boolean;
@@ -25,11 +33,14 @@ interface Window {
   qortiumHome: {
     accounts: {
       list: () => Promise<QortiumAccountsState>;
-      loadWallet: () => Promise<QortiumLoadWalletResult>;
-      createWallet: (password: string) => Promise<QortiumCreateWalletResult>;
+      selectWalletFile: () => Promise<QortiumSelectWalletResult>;
+      discardLoadedWallet: (token: string) => Promise<void>;
+      saveLoadedWallet: (token: string, name: string) => Promise<QortiumAccountsState>;
+      createWallet: (name: string, password: string) => Promise<QortiumCreateWalletResult>;
       setActiveAccount: (accountId: string) => Promise<QortiumAccountsState>;
       unlockWallet: (accountId: string, password: string) => Promise<QortiumAccountsState>;
       lockWallet: (accountId: string) => Promise<QortiumAccountsState>;
+      removeWallet: (accountId: string, password?: string) => Promise<QortiumAccountsState>;
     };
     appName: string;
   };

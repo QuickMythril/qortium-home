@@ -99,12 +99,14 @@ The active page should refer to a selected account context, not just a global wa
 For the initial implementation, it is acceptable to keep the UI simple:
 
 - Load one or more Hub-compatible wallet files.
-- Show each loaded wallet by its `address0` initially.
+- Require a local wallet name when loading or creating a wallet.
+- Show wallet names in the active-wallet selector and show the selected wallet address below it.
 - Persist imported encrypted wallet JSON in Qortium Home's Electron app data.
 - Remember loaded wallets and the selected account across app restarts.
 - Keep all imported wallets locked by default when the app starts.
 - Unlock a wallet only after password verification against the Hub-compatible encrypted wallet data.
 - Keep decrypted seed material in memory for the current application session only, never in persistent storage.
+- Remove saved wallet entries from Qortium Home without deleting the user's wallet backup file, requiring the unlocked state or password verification before removal.
 - Create new wallets from a secure random seed in the initial New flow.
 - Require saving the encrypted wallet backup file before a newly created account is added to Home.
 - Start newly created wallets unlocked for the current application session.

@@ -1,10 +1,12 @@
-import { Lock, Unlock } from 'lucide-react';
+import { Lock, Unlock, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 const EMPTY_ACCOUNTS_STATE: QortiumAccountsState = {
   accounts: [],
   activeAccountId: null,
 };
+
+type PendingLoadedWallet = Extract<QortiumSelectWalletResult, { canceled: false }>;
 
 function formatError(error: unknown) {
   if (!(error instanceof Error)) {
@@ -14,15 +16,51 @@ function formatError(error: unknown) {
   return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
 }
 
-function formatAccountOption(account: QortiumAccountSummary) {
-  return `${account.label} - ${account.address}`;
+function normalizeWalletName(name: string) {
+  return name.trim();
+}
+
+function findDuplicateWalletName(
+  accounts: QortiumAccountSummary[],
+  name: string,
+  exceptAccountId?: string,
+) {
+  const nameKey = normalizeWalletName(name).toLowerCase();
+
+  return accounts.find(
+    (account) =>
+      account.id !== exceptAccountId && normalizeWalletName(account.label).toLowerCase() === nameKey,
+  );
+}
+
+function validateWalletName(
+  accounts: QortiumAccountSummary[],
+  name: string,
+  exceptAccountId?: string,
+) {
+  const walletName = normalizeWalletName(name);
+
+  if (!walletName) {
+    return 'Enter the wallet name.';
+  }
+
+  if (findDuplicateWalletName(accounts, walletName, exceptAccountId)) {
+    return 'Wallet name already exists.';
+  }
+
+  return '';
 }
 
 export function AccountsPanel() {
   const [accountsState, setAccountsState] = useState<QortiumAccountsState>(EMPTY_ACCOUNTS_STATE);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [isLoadingWallet, setIsLoadingWallet] = useState(false);
+  const [pendingLoadedWallet, setPendingLoadedWallet] = useState<PendingLoadedWallet | null>(null);
+  const [loadWalletName, setLoadWalletName] = useState('');
+  const [loadNameError, setLoadNameError] = useState('');
+  const [isSavingLoadedWallet, setIsSavingLoadedWallet] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [newWalletName, setNewWalletName] = useState('');
   const [newWalletPassword, setNewWalletPassword] = useState('');
   const [newWalletPasswordConfirm, setNewWalletPasswordConfirm] = useState('');
   const [createError, setCreateError] = useState('');
@@ -32,6 +70,10 @@ export function AccountsPanel() {
   const [accountError, setAccountError] = useState('');
   const [unlockError, setUnlockError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [removingAccountId, setRemovingAccountId] = useState<string | null>(null);
+  const [removePassword, setRemovePassword] = useState('');
+  const [removeError, setRemoveError] = useState('');
+  const [isRemovingAccount, setIsRemovingAccount] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -67,11 +109,16 @@ export function AccountsPanel() {
     () => accountsState.accounts.find((account) => account.id === unlockingAccountId),
     [accountsState.accounts, unlockingAccountId],
   );
+  const removingAccount = useMemo(
+    () => accountsState.accounts.find((account) => account.id === removingAccountId),
+    [accountsState.accounts, removingAccountId],
+  );
   const hasSavedAccounts = accountsState.accounts.length > 0;
 
   function openCreateDialog() {
     setAccountError('');
     setCreateError('');
+    setNewWalletName('');
     setNewWalletPassword('');
     setNewWalletPasswordConfirm('');
     setIsCreateDialogOpen(true);
@@ -84,6 +131,7 @@ export function AccountsPanel() {
 
     setIsCreateDialogOpen(false);
     setCreateError('');
+    setNewWalletName('');
     setNewWalletPassword('');
     setNewWalletPasswordConfirm('');
   }
@@ -91,6 +139,13 @@ export function AccountsPanel() {
   async function handleCreateSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCreateError('');
+
+    const walletNameError = validateWalletName(accountsState.accounts, newWalletName);
+
+    if (walletNameError) {
+      setCreateError(walletNameError);
+      return;
+    }
 
     if (!newWalletPassword) {
       setCreateError('Enter the wallet password.');
@@ -110,7 +165,10 @@ export function AccountsPanel() {
     setIsCreatingWallet(true);
 
     try {
-      const nextAccountsState = await window.qortiumHome.accounts.createWallet(newWalletPassword);
+      const nextAccountsState = await window.qortiumHome.accounts.createWallet(
+        normalizeWalletName(newWalletName),
+        newWalletPassword,
+      );
 
       if (!nextAccountsState.canceled) {
         setAccountsState({
@@ -120,6 +178,7 @@ export function AccountsPanel() {
       }
 
       setIsCreateDialogOpen(false);
+      setNewWalletName('');
       setNewWalletPassword('');
       setNewWalletPasswordConfirm('');
     } catch (error) {
@@ -131,21 +190,78 @@ export function AccountsPanel() {
 
   async function handleLoadWallet() {
     setAccountError('');
+    setLoadNameError('');
     setIsLoadingWallet(true);
 
     try {
-      const nextAccountsState = await window.qortiumHome.accounts.loadWallet();
+      const selectedWallet = await window.qortiumHome.accounts.selectWalletFile();
 
-      if (!nextAccountsState.canceled) {
-        setAccountsState({
-          accounts: nextAccountsState.accounts,
-          activeAccountId: nextAccountsState.activeAccountId,
-        });
+      if (!selectedWallet.canceled) {
+        setPendingLoadedWallet(selectedWallet);
+        setLoadWalletName(selectedWallet.suggestedName);
       }
     } catch (error) {
       setAccountError(formatError(error));
     } finally {
       setIsLoadingWallet(false);
+    }
+  }
+
+  function discardPendingLoadedWallet(wallet: PendingLoadedWallet) {
+    window.qortiumHome.accounts.discardLoadedWallet(wallet.token).catch((error) => {
+      console.warn('Unable to discard pending wallet load.', error);
+    });
+  }
+
+  function closeLoadNameDialog() {
+    if (isSavingLoadedWallet) {
+      return;
+    }
+
+    if (pendingLoadedWallet) {
+      discardPendingLoadedWallet(pendingLoadedWallet);
+    }
+
+    setPendingLoadedWallet(null);
+    setLoadWalletName('');
+    setLoadNameError('');
+  }
+
+  async function handleLoadNameSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!pendingLoadedWallet) {
+      return;
+    }
+
+    setLoadNameError('');
+
+    const walletNameError = validateWalletName(
+      accountsState.accounts,
+      loadWalletName,
+      pendingLoadedWallet.accountId,
+    );
+
+    if (walletNameError) {
+      setLoadNameError(walletNameError);
+      return;
+    }
+
+    setIsSavingLoadedWallet(true);
+
+    try {
+      const nextAccountsState = await window.qortiumHome.accounts.saveLoadedWallet(
+        pendingLoadedWallet.token,
+        normalizeWalletName(loadWalletName),
+      );
+
+      setAccountsState(nextAccountsState);
+      setPendingLoadedWallet(null);
+      setLoadWalletName('');
+    } catch (error) {
+      setLoadNameError(formatError(error));
+    } finally {
+      setIsSavingLoadedWallet(false);
     }
   }
 
@@ -181,6 +297,10 @@ export function AccountsPanel() {
   }
 
   function closeUnlockDialog() {
+    if (isUnlocking) {
+      return;
+    }
+
     setUnlockingAccountId(null);
     setPassword('');
     setUnlockError('');
@@ -198,11 +318,66 @@ export function AccountsPanel() {
 
     try {
       setAccountsState(await window.qortiumHome.accounts.unlockWallet(unlockingAccount.id, password));
-      closeUnlockDialog();
+      setUnlockingAccountId(null);
+      setPassword('');
+      setUnlockError('');
     } catch (error) {
       setUnlockError(formatError(error));
     } finally {
       setIsUnlocking(false);
+    }
+  }
+
+  function openRemoveDialog() {
+    if (!activeAccount) {
+      return;
+    }
+
+    setAccountError('');
+    setRemoveError('');
+    setRemovePassword('');
+    setRemovingAccountId(activeAccount.id);
+  }
+
+  function closeRemoveDialog() {
+    if (isRemovingAccount) {
+      return;
+    }
+
+    setRemovingAccountId(null);
+    setRemovePassword('');
+    setRemoveError('');
+  }
+
+  async function handleRemoveSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!removingAccount) {
+      return;
+    }
+
+    if (!removingAccount.isUnlocked && !removePassword) {
+      setRemoveError('Enter the wallet password.');
+      return;
+    }
+
+    setRemoveError('');
+    setIsRemovingAccount(true);
+
+    try {
+      setAccountsState(
+        await window.qortiumHome.accounts.removeWallet(
+          removingAccount.id,
+          removingAccount.isUnlocked ? undefined : removePassword,
+        ),
+      );
+      setRemovingAccountId(null);
+      setRemovePassword('');
+      setRemoveError('');
+    } catch (error) {
+      setRemoveError(formatError(error));
+    } finally {
+      setIsRemovingAccount(false);
     }
   }
 
@@ -220,7 +395,7 @@ export function AccountsPanel() {
         <button
           className="button"
           type="button"
-          disabled={isLoadingAccounts || isLoadingWallet}
+          disabled={isLoadingAccounts || isLoadingWallet || isSavingLoadedWallet}
           onClick={handleLoadWallet}
         >
           {isLoadingWallet ? 'Loading' : 'Load'}
@@ -228,33 +403,52 @@ export function AccountsPanel() {
       </div>
 
       {hasSavedAccounts ? (
-        <label className="account-selector">
-          <span className="account-selector__label">Active account</span>
-          <span className="account-selector__control">
+        <div className="account-selector">
+          <label className="account-selector__label" htmlFor="active-wallet">
+            Active wallet
+          </label>
+          <div className="account-selector__control">
             <select
               className="account-selector__select"
+              id="active-wallet"
               value={activeAccount?.id ?? ''}
               onChange={(event) => handleActiveAccountChange(event.target.value)}
             >
               {accountsState.accounts.map((account) => (
                 <option key={account.id} value={account.id}>
-                  {formatAccountOption(account)}
+                  {account.label}
                 </option>
               ))}
             </select>
             <button
-              aria-label={activeAccount?.isUnlocked ? 'Lock selected account' : 'Unlock selected account'}
+              aria-label={activeAccount?.isUnlocked ? 'Lock selected wallet' : 'Unlock selected wallet'}
               className={`icon-button account-selector__lock-button${
                 activeAccount?.isUnlocked ? ' account-selector__lock-button--unlocked' : ''
               }`}
-              title={activeAccount?.isUnlocked ? 'Lock selected account' : 'Unlock selected account'}
+              disabled={!activeAccount}
+              title={activeAccount?.isUnlocked ? 'Lock selected wallet' : 'Unlock selected wallet'}
               type="button"
               onClick={handleLockToggle}
             >
               {activeAccount?.isUnlocked ? <Unlock size={20} /> : <Lock size={20} />}
             </button>
-          </span>
-        </label>
+            <button
+              aria-label="Remove selected wallet"
+              className="icon-button account-selector__remove-button"
+              disabled={!activeAccount || isRemovingAccount}
+              title="Remove selected wallet"
+              type="button"
+              onClick={openRemoveDialog}
+            >
+              <X size={20} />
+            </button>
+          </div>
+          {activeAccount ? (
+            <p className="account-selector__address" aria-label="Selected wallet address">
+              {activeAccount.address}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {accountError ? <p className="accounts-panel__message accounts-panel__message--error">{accountError}</p> : null}
@@ -271,9 +465,18 @@ export function AccountsPanel() {
           >
             <h2 className="unlock-dialog__title">New Account</h2>
             <label className="field">
-              <span className="field__label">Password</span>
+              <span className="field__label">Wallet name</span>
               <input
                 autoFocus
+                className="field__input"
+                type="text"
+                value={newWalletName}
+                onChange={(event) => setNewWalletName(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Password</span>
+              <input
                 className="field__input"
                 type="password"
                 value={newWalletPassword}
@@ -309,6 +512,48 @@ export function AccountsPanel() {
         </div>
       ) : null}
 
+      {pendingLoadedWallet ? (
+        <div className="modal-backdrop" onMouseDown={closeLoadNameDialog}>
+          <form
+            aria-label="Name loaded wallet"
+            aria-modal="true"
+            className="unlock-dialog"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={handleLoadNameSubmit}
+          >
+            <h2 className="unlock-dialog__title">Name Wallet</h2>
+            <p className="unlock-dialog__address">{pendingLoadedWallet.address}</p>
+            <label className="field">
+              <span className="field__label">Wallet name</span>
+              <input
+                autoFocus
+                className="field__input"
+                type="text"
+                value={loadWalletName}
+                onChange={(event) => setLoadWalletName(event.target.value)}
+              />
+            </label>
+            {loadNameError ? (
+              <p className="accounts-panel__message accounts-panel__message--error">{loadNameError}</p>
+            ) : null}
+            <div className="unlock-dialog__actions">
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={isSavingLoadedWallet}
+                onClick={closeLoadNameDialog}
+              >
+                Cancel
+              </button>
+              <button className="button" type="submit" disabled={isSavingLoadedWallet}>
+                {isSavingLoadedWallet ? 'Saving' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {unlockingAccount ? (
         <div className="modal-backdrop" onMouseDown={closeUnlockDialog}>
           <form
@@ -320,7 +565,8 @@ export function AccountsPanel() {
             onSubmit={handleUnlockSubmit}
           >
             <h2 className="unlock-dialog__title">Unlock Account</h2>
-            <p className="unlock-dialog__account">{formatAccountOption(unlockingAccount)}</p>
+            <p className="unlock-dialog__account">{unlockingAccount.label}</p>
+            <p className="unlock-dialog__address">{unlockingAccount.address}</p>
             <label className="field">
               <span className="field__label">Password</span>
               <input
@@ -335,11 +581,61 @@ export function AccountsPanel() {
               <p className="accounts-panel__message accounts-panel__message--error">{unlockError}</p>
             ) : null}
             <div className="unlock-dialog__actions">
-              <button className="button button--secondary" type="button" onClick={closeUnlockDialog}>
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={isUnlocking}
+                onClick={closeUnlockDialog}
+              >
                 Cancel
               </button>
               <button className="button" type="submit" disabled={isUnlocking}>
                 {isUnlocking ? 'Unlocking' : 'Unlock'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {removingAccount ? (
+        <div className="modal-backdrop" onMouseDown={closeRemoveDialog}>
+          <form
+            aria-label="Remove wallet"
+            aria-modal="true"
+            className="unlock-dialog"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={handleRemoveSubmit}
+          >
+            <h2 className="unlock-dialog__title">Remove Wallet</h2>
+            <p className="unlock-dialog__account">{removingAccount.label}</p>
+            <p className="unlock-dialog__address">{removingAccount.address}</p>
+            {!removingAccount.isUnlocked ? (
+              <label className="field">
+                <span className="field__label">Password</span>
+                <input
+                  autoFocus
+                  className="field__input"
+                  type="password"
+                  value={removePassword}
+                  onChange={(event) => setRemovePassword(event.target.value)}
+                />
+              </label>
+            ) : null}
+            {removeError ? (
+              <p className="accounts-panel__message accounts-panel__message--error">{removeError}</p>
+            ) : null}
+            <div className="unlock-dialog__actions">
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={isRemovingAccount}
+                onClick={closeRemoveDialog}
+              >
+                Cancel
+              </button>
+              <button className="button button--danger" type="submit" disabled={isRemovingAccount}>
+                {isRemovingAccount ? 'Removing' : 'Remove'}
               </button>
             </div>
           </form>

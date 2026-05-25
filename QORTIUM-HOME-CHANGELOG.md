@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-25 - app: name and remove wallets
+
+Added explicit local wallet names for New and Load flows, changed the selector to show only wallet names with the active address below, and added selected-wallet removal with password verification when the wallet is locked.
+
 ### 2026-05-25 - app: create new wallets
 
 Added new wallet creation from Qortium Home. Users can enter and confirm a password, save the encrypted wallet backup file before the account is added, and start with the new account unlocked for the current app session.

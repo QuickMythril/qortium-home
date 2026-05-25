@@ -9,7 +9,7 @@ import {
 } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 const requireFromElectron = createRequire(import.meta.url);
@@ -115,7 +115,25 @@ type CreateWalletResult = AccountsState & {
   canceled: boolean;
 };
 
+type PendingLoadedWallet = {
+  encryptedWallet: EncryptedWallet;
+  sourceFilename: string;
+};
+
+type SelectWalletResult =
+  | {
+      canceled: true;
+    }
+  | {
+      accountId: string;
+      address: string;
+      canceled: false;
+      suggestedName: string;
+      token: string;
+    };
+
 const unlockedWalletSeeds = new Map<string, Uint8Array>();
+const pendingLoadedWallets = new Map<string, PendingLoadedWallet>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -463,6 +481,32 @@ function getWalletLabel(sourceFilename: string, wallet: EncryptedWallet) {
   return path.parse(sourceFilename).name || wallet.address0;
 }
 
+function normalizeWalletName(name: string) {
+  return name.trim();
+}
+
+function walletNameKey(name: string) {
+  return normalizeWalletName(name).toLowerCase();
+}
+
+function assertValidWalletName(name: string, store: WalletStore, exceptWalletId?: string) {
+  const nextName = normalizeWalletName(name);
+
+  if (!nextName) {
+    throw new Error('Enter the wallet name.');
+  }
+
+  const duplicateWallet = store.wallets.find(
+    (wallet) => wallet.id !== exceptWalletId && walletNameKey(wallet.label) === walletNameKey(nextName),
+  );
+
+  if (duplicateWallet) {
+    throw new Error('Wallet name already exists.');
+  }
+
+  return nextName;
+}
+
 function upsertWallet(store: WalletStore, wallet: StoredWallet) {
   const existingWalletIndex = store.wallets.findIndex((storedWallet) => storedWallet.id === wallet.id);
 
@@ -475,7 +519,7 @@ function upsertWallet(store: WalletStore, wallet: StoredWallet) {
   store.activeAccountId = wallet.id;
 }
 
-async function loadWallet(event: IpcMainInvokeEvent) {
+async function selectWalletFile(event: IpcMainInvokeEvent): Promise<SelectWalletResult> {
   const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const dialogOptions: OpenDialogOptions = {
     title: 'Load Wallet',
@@ -488,12 +532,10 @@ async function loadWallet(event: IpcMainInvokeEvent) {
   const result = parentWindow
     ? await dialog.showOpenDialog(parentWindow, dialogOptions)
     : await dialog.showOpenDialog(dialogOptions);
-  const store = readWalletStore();
 
   if (result.canceled || result.filePaths.length === 0) {
     return {
       canceled: true,
-      ...toAccountsState(store),
     };
   }
 
@@ -501,12 +543,43 @@ async function loadWallet(event: IpcMainInvokeEvent) {
   const encryptedWallet = readWalletFile(filePath);
   const id = getWalletId(encryptedWallet);
   const sourceFilename = path.basename(filePath);
-  const existingWalletIndex = store.wallets.findIndex((wallet) => wallet.id === id);
-  const existingWallet = store.wallets[existingWalletIndex];
+  const existingWallet = readWalletStore().wallets.find((wallet) => wallet.id === id);
+  const token = randomUUID();
+
+  pendingLoadedWallets.set(token, {
+    encryptedWallet,
+    sourceFilename,
+  });
+
+  return {
+    accountId: id,
+    address: encryptedWallet.address0,
+    canceled: false,
+    suggestedName: existingWallet?.label ?? getWalletLabel(sourceFilename, encryptedWallet),
+    token,
+  };
+}
+
+function discardLoadedWallet(token: string) {
+  pendingLoadedWallets.delete(token);
+}
+
+function saveLoadedWallet(token: string, name: string) {
+  const pendingWallet = pendingLoadedWallets.get(token);
+
+  if (!pendingWallet) {
+    throw new Error('Selected wallet is no longer available. Load the file again.');
+  }
+
+  const { encryptedWallet, sourceFilename } = pendingWallet;
+  const store = readWalletStore();
+  const id = getWalletId(encryptedWallet);
+  const walletName = assertValidWalletName(name, store, id);
+  const existingWallet = store.wallets.find((wallet) => wallet.id === id);
   const now = new Date().toISOString();
   const nextWallet: StoredWallet = {
     id,
-    label: existingWallet?.label ?? getWalletLabel(sourceFilename, encryptedWallet),
+    label: walletName,
     address: encryptedWallet.address0,
     sourceFilename,
     encryptedWallet,
@@ -517,14 +590,15 @@ async function loadWallet(event: IpcMainInvokeEvent) {
   unlockedWalletSeeds.delete(id);
   upsertWallet(store, nextWallet);
   writeWalletStore(store);
+  pendingLoadedWallets.delete(token);
 
-  return {
-    canceled: false,
-    ...toAccountsState(store),
-  };
+  return toAccountsState(store);
 }
 
-async function createWallet(event: IpcMainInvokeEvent, password: string): Promise<CreateWalletResult> {
+async function createWallet(event: IpcMainInvokeEvent, name: string, password: string): Promise<CreateWalletResult> {
+  const initialStore = readWalletStore();
+  const initialWalletName = assertValidWalletName(name, initialStore);
+
   if (!password) {
     throw new Error('Enter the wallet password.');
   }
@@ -544,12 +618,11 @@ async function createWallet(event: IpcMainInvokeEvent, password: string): Promis
   const result = parentWindow
     ? await dialog.showSaveDialog(parentWindow, dialogOptions)
     : await dialog.showSaveDialog(dialogOptions);
-  const store = readWalletStore();
 
   if (result.canceled || !result.filePath) {
     return {
       canceled: true,
-      ...toAccountsState(store),
+      ...toAccountsState(readWalletStore()),
     };
   }
 
@@ -557,11 +630,13 @@ async function createWallet(event: IpcMainInvokeEvent, password: string): Promis
 
   const id = getWalletId(encryptedWallet);
   const sourceFilename = path.basename(result.filePath);
+  const store = readWalletStore();
+  const walletName = assertValidWalletName(initialWalletName, store, id);
   const existingWallet = store.wallets.find((wallet) => wallet.id === id);
   const now = new Date().toISOString();
   const nextWallet: StoredWallet = {
     id,
-    label: existingWallet?.label ?? getWalletLabel(sourceFilename, encryptedWallet),
+    label: walletName,
     address: encryptedWallet.address0,
     sourceFilename,
     encryptedWallet,
@@ -619,15 +694,51 @@ function lockWallet(accountId: string) {
   return toAccountsState(store);
 }
 
+async function removeWallet(accountId: string, password?: string) {
+  const store = readWalletStore();
+  const walletIndex = store.wallets.findIndex((wallet) => wallet.id === accountId);
+  const wallet = store.wallets[walletIndex];
+
+  if (!wallet) {
+    throw new Error('Selected account is not saved.');
+  }
+
+  if (!unlockedWalletSeeds.has(accountId)) {
+    await decryptWalletSeed(password ?? '', wallet.encryptedWallet);
+  }
+
+  const wasActiveWallet = store.activeAccountId === accountId;
+
+  store.wallets.splice(walletIndex, 1);
+  unlockedWalletSeeds.delete(accountId);
+
+  if (wasActiveWallet) {
+    store.activeAccountId = store.wallets[walletIndex]?.id ?? store.wallets[walletIndex - 1]?.id ?? null;
+  }
+
+  writeWalletStore(store);
+
+  return toAccountsState(store);
+}
+
 export function registerAccountIpcHandlers() {
   ipcMain.handle('accounts:list', () => toAccountsState());
-  ipcMain.handle('accounts:loadWallet', (event) => loadWallet(event));
-  ipcMain.handle('accounts:createWallet', (event, password: string) => createWallet(event, password));
+  ipcMain.handle('accounts:selectWalletFile', (event) => selectWalletFile(event));
+  ipcMain.handle('accounts:discardLoadedWallet', (_event, token: string) => discardLoadedWallet(token));
+  ipcMain.handle('accounts:saveLoadedWallet', (_event, token: string, name: string) =>
+    saveLoadedWallet(token, name),
+  );
+  ipcMain.handle('accounts:createWallet', (event, name: string, password: string) =>
+    createWallet(event, name, password),
+  );
   ipcMain.handle('accounts:setActiveAccount', (_event, accountId: string) => setActiveAccount(accountId));
   ipcMain.handle('accounts:unlockWallet', (_event, accountId: string, password: string) =>
     unlockWallet(accountId, password),
   );
   ipcMain.handle('accounts:lockWallet', (_event, accountId: string) => lockWallet(accountId));
+  ipcMain.handle('accounts:removeWallet', (_event, accountId: string, password?: string) =>
+    removeWallet(accountId, password),
+  );
 
   app.on('before-quit', () => {
     unlockedWalletSeeds.clear();
