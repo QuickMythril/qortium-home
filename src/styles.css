@@ -123,6 +123,81 @@ h1 {
   letter-spacing: 0;
 }
 
+.home-content {
+  display: grid;
+  justify-items: center;
+  gap: 22px;
+  width: min(100%, 560px);
+}
+
+.button {
+  min-width: 96px;
+  min-height: 42px;
+  padding: 8px 18px;
+  color: #f4f0e8;
+  background: #202727;
+  border: 1px solid #344141;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled),
+.button:focus-visible {
+  background: #283131;
+  border-color: #536363;
+  outline: none;
+}
+
+.button:disabled {
+  color: #7f8d8d;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.accounts-panel {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.accounts-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.account-selector {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 440px);
+}
+
+.account-selector__label {
+  color: #a9b6b6;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.account-selector__select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 36px 8px 12px;
+  overflow: hidden;
+  color: #f4f0e8;
+  text-overflow: ellipsis;
+  background: #202727;
+  border: 1px solid #344141;
+  border-radius: 8px;
+}
+
+.account-selector__select:focus {
+  border-color: #536363;
+  outline: none;
+}
+
 .node-status {
   position: absolute;
   top: 20px;
@@ -249,5 +324,25 @@ h1 {
   .detail-list__value--technical {
     overflow-wrap: anywhere;
     white-space: normal;
+  }
+}
+
+@media (max-width: 420px) {
+  .app-shell {
+    padding: 24px;
+  }
+
+  .home-content {
+    gap: 18px;
+  }
+
+  .accounts-panel__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .button {
+    min-width: 0;
+    width: 100%;
   }
 }
