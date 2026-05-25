@@ -1,97 +1,145 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Lock, Unlock } from 'lucide-react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
-const SAVED_ACCOUNTS_STORAGE_KEY = 'qortium-home.saved-accounts';
-const ACTIVE_ACCOUNT_STORAGE_KEY = 'qortium-home.active-account-id';
-
-type SavedAccount = {
-  address: string;
-  id: string;
-  label: string;
+const EMPTY_ACCOUNTS_STATE: QortiumAccountsState = {
+  accounts: [],
+  activeAccountId: null,
 };
 
-function isSavedAccount(value: unknown): value is SavedAccount {
-  if (!value || typeof value !== 'object') {
-    return false;
+function formatError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return 'Account action failed.';
   }
 
-  const account = value as Partial<SavedAccount>;
-
-  return (
-    typeof account.address === 'string' &&
-    account.address.length > 0 &&
-    typeof account.id === 'string' &&
-    account.id.length > 0 &&
-    typeof account.label === 'string' &&
-    account.label.length > 0
-  );
+  return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
 }
 
-function readSavedAccounts() {
-  try {
-    const parsedAccounts: unknown = JSON.parse(
-      window.localStorage.getItem(SAVED_ACCOUNTS_STORAGE_KEY) ?? '[]',
-    );
-
-    if (!Array.isArray(parsedAccounts)) {
-      return [];
-    }
-
-    return parsedAccounts.filter(isSavedAccount);
-  } catch {
-    return [];
-  }
-}
-
-function readActiveAccountId(savedAccounts: SavedAccount[]) {
-  const storedAccountId = window.localStorage.getItem(ACTIVE_ACCOUNT_STORAGE_KEY);
-
-  if (storedAccountId && savedAccounts.some((account) => account.id === storedAccountId)) {
-    return storedAccountId;
-  }
-
-  return savedAccounts[0]?.id ?? '';
-}
-
-function formatAccountOption(account: SavedAccount) {
+function formatAccountOption(account: QortiumAccountSummary) {
   return `${account.label} - ${account.address}`;
 }
 
 export function AccountsPanel() {
-  const [hasLoadedAccounts, setHasLoadedAccounts] = useState(false);
-  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
-  const [activeAccountId, setActiveAccountId] = useState('');
+  const [accountsState, setAccountsState] = useState<QortiumAccountsState>(EMPTY_ACCOUNTS_STATE);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+  const [isLoadingWallet, setIsLoadingWallet] = useState(false);
+  const [unlockingAccountId, setUnlockingAccountId] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [accountError, setAccountError] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
 
   useEffect(() => {
-    const nextSavedAccounts = readSavedAccounts();
+    let isMounted = true;
 
-    setSavedAccounts(nextSavedAccounts);
-    setActiveAccountId(readActiveAccountId(nextSavedAccounts));
-    setHasLoadedAccounts(true);
+    window.qortiumHome.accounts
+      .list()
+      .then((nextAccountsState) => {
+        if (isMounted) {
+          setAccountsState(nextAccountsState);
+        }
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setAccountError(formatError(error));
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingAccounts(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  useEffect(() => {
-    if (hasLoadedAccounts) {
-      window.localStorage.setItem(SAVED_ACCOUNTS_STORAGE_KEY, JSON.stringify(savedAccounts));
-    }
-  }, [hasLoadedAccounts, savedAccounts]);
+  const activeAccount = useMemo(
+    () => accountsState.accounts.find((account) => account.id === accountsState.activeAccountId),
+    [accountsState.accounts, accountsState.activeAccountId],
+  );
+  const unlockingAccount = useMemo(
+    () => accountsState.accounts.find((account) => account.id === unlockingAccountId),
+    [accountsState.accounts, unlockingAccountId],
+  );
+  const hasSavedAccounts = accountsState.accounts.length > 0;
 
-  useEffect(() => {
-    if (!hasLoadedAccounts) {
+  async function handleLoadWallet() {
+    setAccountError('');
+    setIsLoadingWallet(true);
+
+    try {
+      const nextAccountsState = await window.qortiumHome.accounts.loadWallet();
+
+      if (!nextAccountsState.canceled) {
+        setAccountsState({
+          accounts: nextAccountsState.accounts,
+          activeAccountId: nextAccountsState.activeAccountId,
+        });
+      }
+    } catch (error) {
+      setAccountError(formatError(error));
+    } finally {
+      setIsLoadingWallet(false);
+    }
+  }
+
+  async function handleActiveAccountChange(accountId: string) {
+    setAccountError('');
+
+    try {
+      setAccountsState(await window.qortiumHome.accounts.setActiveAccount(accountId));
+    } catch (error) {
+      setAccountError(formatError(error));
+    }
+  }
+
+  async function handleLockToggle() {
+    if (!activeAccount) {
       return;
     }
 
-    if (activeAccountId) {
-      window.localStorage.setItem(ACTIVE_ACCOUNT_STORAGE_KEY, activeAccountId);
-    } else {
-      window.localStorage.removeItem(ACTIVE_ACCOUNT_STORAGE_KEY);
-    }
-  }, [activeAccountId, hasLoadedAccounts]);
+    setAccountError('');
 
-  const hasSavedAccounts = savedAccounts.length > 0;
-  const activeAccount = useMemo(
-    () => savedAccounts.find((account) => account.id === activeAccountId),
-    [activeAccountId, savedAccounts],
-  );
+    if (!activeAccount.isUnlocked) {
+      setPassword('');
+      setUnlockError('');
+      setUnlockingAccountId(activeAccount.id);
+      return;
+    }
+
+    try {
+      setAccountsState(await window.qortiumHome.accounts.lockWallet(activeAccount.id));
+    } catch (error) {
+      setAccountError(formatError(error));
+    }
+  }
+
+  function closeUnlockDialog() {
+    setUnlockingAccountId(null);
+    setPassword('');
+    setUnlockError('');
+  }
+
+  async function handleUnlockSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!unlockingAccount) {
+      return;
+    }
+
+    setUnlockError('');
+    setIsUnlocking(true);
+
+    try {
+      setAccountsState(await window.qortiumHome.accounts.unlockWallet(unlockingAccount.id, password));
+      closeUnlockDialog();
+    } catch (error) {
+      setUnlockError(formatError(error));
+    } finally {
+      setIsUnlocking(false);
+    }
+  }
 
   return (
     <section className="accounts-panel" aria-label="Accounts">
@@ -99,26 +147,83 @@ export function AccountsPanel() {
         <button className="button" type="button" disabled>
           New
         </button>
-        <button className="button" type="button" disabled>
-          Load
+        <button
+          className="button"
+          type="button"
+          disabled={isLoadingAccounts || isLoadingWallet}
+          onClick={handleLoadWallet}
+        >
+          {isLoadingWallet ? 'Loading' : 'Load'}
         </button>
       </div>
 
       {hasSavedAccounts ? (
         <label className="account-selector">
           <span className="account-selector__label">Active account</span>
-          <select
-            className="account-selector__select"
-            value={activeAccount?.id ?? ''}
-            onChange={(event) => setActiveAccountId(event.target.value)}
-          >
-            {savedAccounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {formatAccountOption(account)}
-              </option>
-            ))}
-          </select>
+          <span className="account-selector__control">
+            <select
+              className="account-selector__select"
+              value={activeAccount?.id ?? ''}
+              onChange={(event) => handleActiveAccountChange(event.target.value)}
+            >
+              {accountsState.accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {formatAccountOption(account)}
+                </option>
+              ))}
+            </select>
+            <button
+              aria-label={activeAccount?.isUnlocked ? 'Lock selected account' : 'Unlock selected account'}
+              className={`icon-button account-selector__lock-button${
+                activeAccount?.isUnlocked ? ' account-selector__lock-button--unlocked' : ''
+              }`}
+              title={activeAccount?.isUnlocked ? 'Lock selected account' : 'Unlock selected account'}
+              type="button"
+              onClick={handleLockToggle}
+            >
+              {activeAccount?.isUnlocked ? <Unlock size={20} /> : <Lock size={20} />}
+            </button>
+          </span>
         </label>
+      ) : null}
+
+      {accountError ? <p className="accounts-panel__message accounts-panel__message--error">{accountError}</p> : null}
+
+      {unlockingAccount ? (
+        <div className="modal-backdrop" onMouseDown={closeUnlockDialog}>
+          <form
+            aria-label="Unlock account"
+            aria-modal="true"
+            className="unlock-dialog"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={handleUnlockSubmit}
+          >
+            <h2 className="unlock-dialog__title">Unlock Account</h2>
+            <p className="unlock-dialog__account">{formatAccountOption(unlockingAccount)}</p>
+            <label className="field">
+              <span className="field__label">Password</span>
+              <input
+                autoFocus
+                className="field__input"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+            {unlockError ? (
+              <p className="accounts-panel__message accounts-panel__message--error">{unlockError}</p>
+            ) : null}
+            <div className="unlock-dialog__actions">
+              <button className="button button--secondary" type="button" onClick={closeUnlockDialog}>
+                Cancel
+              </button>
+              <button className="button" type="submit" disabled={isUnlocking}>
+                {isUnlocking ? 'Unlocking' : 'Unlock'}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : null}
     </section>
   );

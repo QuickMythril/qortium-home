@@ -100,6 +100,11 @@ For the initial implementation, it is acceptable to keep the UI simple:
 
 - Load one or more Hub-compatible wallet files.
 - Show each loaded wallet by its `address0` initially.
+- Persist imported encrypted wallet JSON in Qortium Home's Electron app data.
+- Remember loaded wallets and the selected account across app restarts.
+- Keep all imported wallets locked by default when the app starts.
+- Unlock a wallet only after password verification against the Hub-compatible encrypted wallet data.
+- Keep decrypted seed material in memory for the current application session only, never in persistent storage.
 - Derive and expose additional addresses from the same wallet after the basic wallet load/unlock flow works.
 - Add richer address discovery, labeling, and per-tab switching after the scaffold is testable.
 
@@ -153,9 +158,6 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - How much of the desktop and Android UI can be shared exactly, and where will Android need platform-specific behavior?
 - Should Qortium Home export only Hub-compatible wallet files at first, or also define an extended Qortium Home wallet metadata format?
 - Should wallet files be encrypted by default? Current direction: yes, preserve Hub-compatible encrypted wallet files.
-- Where should locally loaded wallet metadata be stored?
-- Should Qortium Home remember recently loaded wallets, or require users to re-open wallet files every session?
-- Should private keys ever be held in application storage, or only in user-selected wallet files?
 - How many derived addresses should Qortium Home show by default for each loaded wallet?
 - Should derived addresses be discovered by scanning chain activity, generated on demand, or both?
 - How should users label derived addresses separately from wallet files?

@@ -1,0 +1,484 @@
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type IpcMainInvokeEvent,
+  type OpenDialogOptions,
+} from 'electron';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
+const requireFromElectron = createRequire(import.meta.url);
+const asmCrypto = requireFromElectron('asmcrypto.js') as {
+  AES_CBC: {
+    decrypt: (
+      encryptedData: Uint8Array,
+      key: Uint8Array,
+      padding: boolean,
+      iv: Uint8Array,
+    ) => Uint8Array;
+  };
+  HmacSha512: new (key: Uint8Array) => {
+    process: (data: Uint8Array) => {
+      finish: () => {
+        result: Uint8Array;
+      };
+    };
+  };
+  Sha512: new () => {
+    process: (data: Uint8Array) => {
+      finish: () => {
+        result: Uint8Array;
+      };
+    };
+  };
+  bytes_to_base64: (data: Uint8Array) => string;
+};
+const bcrypt = requireFromElectron('bcryptjs') as {
+  hash: (data: string, salt: string) => Promise<string>;
+};
+
+const WALLETS_FILE = 'wallets.json';
+const WALLET_STORE_VERSION = 1;
+const KDF_THREAD_COUNT = 16;
+const STATIC_SALT = '4ghkVQExoneGqZqHTMMhhFfxXsVg2A75QeS1HCM5KAih';
+const STATIC_BCRYPT_SALT = '$2a$11$IxVE941tXVUD4cW0TNVm.O';
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const BASE58_ALPHABET_MAP = new Map<string, number>(
+  [...BASE58_ALPHABET].map((character, index) => [character, index]),
+);
+
+type EncryptedWallet = {
+  address0: string;
+  encryptedSeed: string;
+  iv: string;
+  kdfThreads: number;
+  mac: string;
+  salt: string;
+  version: number;
+  [key: string]: unknown;
+};
+
+type StoredWallet = {
+  address: string;
+  createdAt: string;
+  encryptedWallet: EncryptedWallet;
+  id: string;
+  label: string;
+  sourceFilename: string;
+  updatedAt: string;
+};
+
+type WalletStore = {
+  activeAccountId: string | null;
+  version: typeof WALLET_STORE_VERSION;
+  wallets: StoredWallet[];
+};
+
+type AccountSummary = {
+  address: string;
+  id: string;
+  isUnlocked: boolean;
+  label: string;
+  sourceFilename: string;
+};
+
+type AccountsState = {
+  accounts: AccountSummary[];
+  activeAccountId: string | null;
+};
+
+const unlockedWalletSeeds = new Map<string, Uint8Array>();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function getWalletsPath() {
+  return path.join(app.getPath('userData'), WALLETS_FILE);
+}
+
+function createEmptyWalletStore(): WalletStore {
+  return {
+    version: WALLET_STORE_VERSION,
+    activeAccountId: null,
+    wallets: [],
+  };
+}
+
+function isEncryptedWallet(value: unknown): value is EncryptedWallet {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isNonEmptyString(value.address0) &&
+    isNonEmptyString(value.encryptedSeed) &&
+    isNonEmptyString(value.iv) &&
+    isFiniteNumber(value.kdfThreads) &&
+    isNonEmptyString(value.mac) &&
+    isNonEmptyString(value.salt) &&
+    isFiniteNumber(value.version)
+  );
+}
+
+function assertEncryptedWallet(value: unknown): EncryptedWallet {
+  if (!isEncryptedWallet(value)) {
+    throw new Error(
+      'Wallet file must include address0, encryptedSeed, salt, iv, version, mac, and kdfThreads.',
+    );
+  }
+
+  return value;
+}
+
+function isStoredWallet(value: unknown): value is StoredWallet {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isNonEmptyString(value.address) &&
+    isNonEmptyString(value.createdAt) &&
+    isEncryptedWallet(value.encryptedWallet) &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.label) &&
+    typeof value.sourceFilename === 'string' &&
+    isNonEmptyString(value.updatedAt)
+  );
+}
+
+function normalizeWalletStore(store: WalletStore): WalletStore {
+  const activeWallet = store.wallets.find((wallet) => wallet.id === store.activeAccountId);
+
+  return {
+    version: WALLET_STORE_VERSION,
+    wallets: store.wallets,
+    activeAccountId: activeWallet?.id ?? store.wallets[0]?.id ?? null,
+  };
+}
+
+function readWalletStore(): WalletStore {
+  const walletsPath = getWalletsPath();
+
+  if (!existsSync(walletsPath)) {
+    return createEmptyWalletStore();
+  }
+
+  try {
+    const parsedStore: unknown = JSON.parse(readFileSync(walletsPath, 'utf8'));
+
+    if (!isRecord(parsedStore) || !Array.isArray(parsedStore.wallets)) {
+      return createEmptyWalletStore();
+    }
+
+    const store: WalletStore = {
+      version: WALLET_STORE_VERSION,
+      wallets: parsedStore.wallets.filter(isStoredWallet),
+      activeAccountId:
+        typeof parsedStore.activeAccountId === 'string' ? parsedStore.activeAccountId : null,
+    };
+
+    return normalizeWalletStore(store);
+  } catch (error) {
+    console.warn('Unable to read wallet store.', error);
+    return createEmptyWalletStore();
+  }
+}
+
+function writeWalletStore(store: WalletStore) {
+  const nextStore = normalizeWalletStore(store);
+  const walletsPath = getWalletsPath();
+
+  mkdirSync(path.dirname(walletsPath), { recursive: true });
+  writeFileSync(walletsPath, `${JSON.stringify(nextStore, null, 2)}\n`, 'utf8');
+}
+
+function toAccountsState(store = readWalletStore()): AccountsState {
+  const nextStore = normalizeWalletStore(store);
+
+  return {
+    activeAccountId: nextStore.activeAccountId,
+    accounts: nextStore.wallets.map((wallet) => ({
+      id: wallet.id,
+      label: wallet.label,
+      address: wallet.address,
+      sourceFilename: wallet.sourceFilename,
+      isUnlocked: unlockedWalletSeeds.has(wallet.id),
+    })),
+  };
+}
+
+function base58Encode(buffer: Uint8Array) {
+  if (buffer.length === 0) {
+    return '';
+  }
+
+  const digits = [0];
+
+  for (const byte of buffer) {
+    for (let index = 0; index < digits.length; index += 1) {
+      digits[index] <<= 8;
+    }
+
+    digits[0] += byte;
+
+    let carry = 0;
+
+    for (let index = 0; index < digits.length; index += 1) {
+      digits[index] += carry;
+      carry = (digits[index] / 58) | 0;
+      digits[index] %= 58;
+    }
+
+    while (carry) {
+      digits.push(carry % 58);
+      carry = (carry / 58) | 0;
+    }
+  }
+
+  for (let index = 0; buffer[index] === 0 && index < buffer.length - 1; index += 1) {
+    digits.push(0);
+  }
+
+  return digits
+    .reverse()
+    .map((digit) => BASE58_ALPHABET[digit])
+    .join('');
+}
+
+function base58Decode(value: string) {
+  if (value.length === 0) {
+    return new Uint8Array(0);
+  }
+
+  const bytes = [0];
+
+  for (const character of value) {
+    const mappedValue = BASE58_ALPHABET_MAP.get(character);
+
+    if (mappedValue === undefined) {
+      throw new Error(`Base58 value contains an invalid character: ${character}`);
+    }
+
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] *= 58;
+    }
+
+    bytes[0] += mappedValue;
+
+    let carry = 0;
+
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] += carry;
+      carry = bytes[index] >> 8;
+      bytes[index] &= 0xff;
+    }
+
+    while (carry) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+
+  for (let index = 0; value[index] === '1' && index < value.length - 1; index += 1) {
+    bytes.push(0);
+  }
+
+  return new Uint8Array(bytes.reverse());
+}
+
+function stringToUtf8Array(value: string) {
+  return new TextEncoder().encode(value);
+}
+
+function sha512(data: Uint8Array) {
+  return new asmCrypto.Sha512().process(data).finish().result;
+}
+
+async function computeKdfPart(password: string, nonce: number) {
+  const hash = sha512(stringToUtf8Array(`${STATIC_SALT}${password}${nonce}`));
+  const hashBase64 = asmCrypto.bytes_to_base64(hash);
+
+  return bcrypt.hash(hashBase64.substring(0, 72), STATIC_BCRYPT_SALT);
+}
+
+async function deriveWalletKey(password: string) {
+  const parts = await Promise.all(
+    Array.from({ length: KDF_THREAD_COUNT }, (_value, nonce) => computeKdfPart(password, nonce)),
+  );
+
+  return sha512(stringToUtf8Array(`${STATIC_SALT}${parts.reduce((combined, part) => combined + part)}`));
+}
+
+async function decryptWalletSeed(password: string, wallet: EncryptedWallet) {
+  if (!password) {
+    throw new Error('Enter the wallet password.');
+  }
+
+  try {
+    const encryptedSeed = base58Decode(wallet.encryptedSeed);
+    const iv = base58Decode(wallet.iv);
+
+    base58Decode(wallet.salt);
+
+    const key = await deriveWalletKey(password);
+    const encryptionKey = key.slice(0, 32);
+    const macKey = key.slice(32, 63);
+    const mac = new asmCrypto.HmacSha512(macKey).process(encryptedSeed).finish().result;
+
+    if (base58Encode(mac) !== wallet.mac) {
+      throw new Error('Incorrect wallet password.');
+    }
+
+    return new Uint8Array(asmCrypto.AES_CBC.decrypt(encryptedSeed, encryptionKey, false, iv));
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Incorrect wallet password.') {
+      throw error;
+    }
+
+    throw new Error('Unable to unlock wallet.');
+  }
+}
+
+function readWalletFile(filePath: string) {
+  try {
+    return assertEncryptedWallet(JSON.parse(readFileSync(filePath, 'utf8')));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Wallet file must include')) {
+      throw error;
+    }
+
+    throw new Error('Unable to read the selected wallet file.');
+  }
+}
+
+function getWalletId(wallet: EncryptedWallet) {
+  return `wallet:${wallet.address0}`;
+}
+
+function getWalletLabel(sourceFilename: string, wallet: EncryptedWallet) {
+  return path.parse(sourceFilename).name || wallet.address0;
+}
+
+async function loadWallet(event: IpcMainInvokeEvent) {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const dialogOptions: OpenDialogOptions = {
+    title: 'Load Wallet',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Wallet JSON', extensions: ['json'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  };
+  const result = parentWindow
+    ? await dialog.showOpenDialog(parentWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions);
+  const store = readWalletStore();
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return {
+      canceled: true,
+      ...toAccountsState(store),
+    };
+  }
+
+  const filePath = result.filePaths[0];
+  const encryptedWallet = readWalletFile(filePath);
+  const id = getWalletId(encryptedWallet);
+  const sourceFilename = path.basename(filePath);
+  const existingWalletIndex = store.wallets.findIndex((wallet) => wallet.id === id);
+  const existingWallet = store.wallets[existingWalletIndex];
+  const now = new Date().toISOString();
+  const nextWallet: StoredWallet = {
+    id,
+    label: existingWallet?.label ?? getWalletLabel(sourceFilename, encryptedWallet),
+    address: encryptedWallet.address0,
+    sourceFilename,
+    encryptedWallet,
+    createdAt: existingWallet?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  if (existingWalletIndex >= 0) {
+    store.wallets[existingWalletIndex] = nextWallet;
+  } else {
+    store.wallets.push(nextWallet);
+  }
+
+  unlockedWalletSeeds.delete(id);
+  store.activeAccountId = id;
+  writeWalletStore(store);
+
+  return {
+    canceled: false,
+    ...toAccountsState(store),
+  };
+}
+
+function setActiveAccount(accountId: string) {
+  const store = readWalletStore();
+
+  if (!store.wallets.some((wallet) => wallet.id === accountId)) {
+    throw new Error('Selected account is not saved.');
+  }
+
+  store.activeAccountId = accountId;
+  writeWalletStore(store);
+
+  return toAccountsState(store);
+}
+
+async function unlockWallet(accountId: string, password: string) {
+  const store = readWalletStore();
+  const wallet = store.wallets.find((storedWallet) => storedWallet.id === accountId);
+
+  if (!wallet) {
+    throw new Error('Selected account is not saved.');
+  }
+
+  const seed = await decryptWalletSeed(password, wallet.encryptedWallet);
+
+  unlockedWalletSeeds.set(accountId, seed);
+
+  return toAccountsState(store);
+}
+
+function lockWallet(accountId: string) {
+  const store = readWalletStore();
+
+  if (!store.wallets.some((wallet) => wallet.id === accountId)) {
+    throw new Error('Selected account is not saved.');
+  }
+
+  unlockedWalletSeeds.delete(accountId);
+
+  return toAccountsState(store);
+}
+
+export function registerAccountIpcHandlers() {
+  ipcMain.handle('accounts:list', () => toAccountsState());
+  ipcMain.handle('accounts:loadWallet', (event) => loadWallet(event));
+  ipcMain.handle('accounts:setActiveAccount', (_event, accountId: string) => setActiveAccount(accountId));
+  ipcMain.handle('accounts:unlockWallet', (_event, accountId: string, password: string) =>
+    unlockWallet(accountId, password),
+  );
+  ipcMain.handle('accounts:lockWallet', (_event, accountId: string) => lockWallet(accountId));
+
+  app.on('before-quit', () => {
+    unlockedWalletSeeds.clear();
+  });
+  app.on('window-all-closed', () => {
+    unlockedWalletSeeds.clear();
+  });
+}

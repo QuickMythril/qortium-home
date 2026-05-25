@@ -2,6 +2,7 @@ import { app, BrowserWindow, screen, type Rectangle } from 'electron';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { registerAccountIpcHandlers } from './accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_WINDOW_WIDTH = 1100;
@@ -150,7 +151,7 @@ function createWindow() {
     title: 'Qortium Home',
     backgroundColor: '#121515',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -170,6 +171,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  registerAccountIpcHandlers();
   createWindow();
 
   app.on('activate', () => {
