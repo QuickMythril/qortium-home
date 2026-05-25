@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-25 - app: persist window bounds
+
+Added desktop window state persistence so Qortium Home saves its window size, location, and maximized state when the user changes them, then restores a safe saved window position on the next launch.
+
 ### 2026-05-25 - app: align detail list values
 
 Adjusted shared detail-list layout so value columns fill the remaining panel width and right-aligned values visually line up at the right edge instead of sitting in a shrink-wrapped column.
