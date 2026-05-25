@@ -1,23 +1,23 @@
 import { ArrowRight, Globe2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 import { NodeStatusButton } from './NodeStatusButton';
-import type { QdnResource } from './qdn';
+import type { QdnRoute } from './qdn';
 import { parseQdnUrl } from './qdn';
 
 type TopBarProps = {
-  currentResource: QdnResource | null;
-  onNavigate: (resource: QdnResource) => void;
+  currentRoute: QdnRoute | null;
+  onNavigate: (route: QdnRoute) => void;
 };
 
-export function TopBar({ currentResource, onNavigate }: TopBarProps) {
+export function TopBar({ currentRoute, onNavigate }: TopBarProps) {
   const [addressValue, setAddressValue] = useState('');
   const [addressError, setAddressError] = useState('');
 
   useEffect(() => {
-    if (currentResource) {
-      setAddressValue(currentResource.displayUrl);
+    if (currentRoute) {
+      setAddressValue(currentRoute.displayUrl);
     }
-  }, [currentResource]);
+  }, [currentRoute]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,7 +30,7 @@ export function TopBar({ currentResource, onNavigate }: TopBarProps) {
     }
 
     setAddressError('');
-    onNavigate(parsedUrl.resource);
+    onNavigate(parsedUrl.route);
   }
 
   return (
@@ -45,7 +45,7 @@ export function TopBar({ currentResource, onNavigate }: TopBarProps) {
             autoComplete="off"
             className="top-bar__address-input"
             id="qdn-address"
-            placeholder="qdn://WEBSITE/QortiumHomeTest/default/"
+            placeholder="qdn://APP"
             spellCheck={false}
             type="text"
             value={addressValue}

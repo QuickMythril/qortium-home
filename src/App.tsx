@@ -1,22 +1,26 @@
 import './styles.css';
 import { useState } from 'react';
 import { AccountsPanel } from './AccountsPanel';
+import { QdnExplorer } from './QdnExplorer';
 import { QdnViewer } from './QdnViewer';
 import { TopBar } from './TopBar';
-import type { QdnResource } from './qdn';
+import type { QdnRoute } from './qdn';
 
 export function App() {
-  const [currentResource, setCurrentResource] = useState<QdnResource | null>(null);
+  const [currentRoute, setCurrentRoute] = useState<QdnRoute | null>(null);
+  const isQdnRoute = currentRoute !== null;
 
   return (
     <main className="app-shell">
-      <TopBar currentResource={currentResource} onNavigate={setCurrentResource} />
+      <TopBar currentRoute={currentRoute} onNavigate={setCurrentRoute} />
       <section
-        className={`app-main${currentResource ? ' app-main--viewer' : ''}`}
-        aria-label={currentResource ? 'QDN page' : 'Qortium Home'}
+        className={`app-main${isQdnRoute ? ' app-main--viewer' : ''}`}
+        aria-label={isQdnRoute ? 'QDN page' : 'Qortium Home'}
       >
-        {currentResource ? (
-          <QdnViewer resource={currentResource} />
+        {currentRoute?.kind === 'resource' ? (
+          <QdnViewer resource={currentRoute.resource} />
+        ) : currentRoute ? (
+          <QdnExplorer route={currentRoute} onNavigate={setCurrentRoute} />
         ) : (
           <div className="home-content">
             <h1>Qortium Home</h1>
