@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-25 - app: add local UI fonts
+
+Added local Lexend and Illinois Mono font files with their open font licenses. Qortium Home now uses Lexend as the primary interface font and Illinois Mono for fixed-width text, so the application typography is bundled with the app instead of depending on system fonts or an external font service.
+
 ### 2026-05-25 - app: add node status indicator
 
 Added a small node status indicator to the main Qortium Home screen. It checks the default Qortium Previewnet node at `localhost:62391`, reports whether the node is unavailable, syncing, minting, or synced, and shows chain peers, data peers, block height, and sync percent in a compact details panel.
