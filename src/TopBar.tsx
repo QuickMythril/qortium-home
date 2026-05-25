@@ -1,22 +1,147 @@
-import { ArrowRight, Globe2 } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { ArrowRight, ChevronLeft, ChevronRight, Globe2 } from 'lucide-react';
+import type { FormEvent, MouseEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NodeStatusButton } from './NodeStatusButton';
+import { Popover } from './components/Popover';
 import type { QdnRoute } from './qdn';
 import { parseQdnUrl } from './qdn';
 
 type TopBarProps = {
+  canGoBack: boolean;
+  canGoForward: boolean;
   currentRoute: QdnRoute | null;
+  historyEntries: (QdnRoute | null)[];
+  historyIndex: number;
+  onGoBack: () => void;
+  onGoForward: () => void;
+  onGoToHistoryIndex: (index: number) => void;
   onNavigate: (route: QdnRoute) => void;
 };
 
-export function TopBar({ currentRoute, onNavigate }: TopBarProps) {
+type HistoryButtonProps = {
+  canNavigate: boolean;
+  direction: 'back' | 'forward';
+  historyEntries: (QdnRoute | null)[];
+  historyIndex: number;
+  onJump: (index: number) => void;
+  onStep: () => void;
+};
+
+type HistoryMenuItem = {
+  entry: QdnRoute | null;
+  index: number;
+};
+
+function formatHistoryEntry(entry: QdnRoute | null) {
+  return entry?.displayUrl ?? 'Qortium Home';
+}
+
+function getHistoryItems(
+  direction: HistoryButtonProps['direction'],
+  historyEntries: HistoryButtonProps['historyEntries'],
+  historyIndex: number,
+) {
+  if (direction === 'back') {
+    return historyEntries
+      .slice(0, historyIndex)
+      .map<HistoryMenuItem>((entry, index) => ({ entry, index }))
+      .reverse();
+  }
+
+  return historyEntries.slice(historyIndex + 1).map<HistoryMenuItem>((entry, offset) => ({
+    entry,
+    index: historyIndex + offset + 1,
+  }));
+}
+
+function HistoryButton({
+  canNavigate,
+  direction,
+  historyEntries,
+  historyIndex,
+  onJump,
+  onStep,
+}: HistoryButtonProps) {
+  const label = direction === 'back' ? 'Back' : 'Forward';
+  const Icon = direction === 'back' ? ChevronLeft : ChevronRight;
+  const items = useMemo(
+    () => getHistoryItems(direction, historyEntries, historyIndex),
+    [direction, historyEntries, historyIndex],
+  );
+
+  function handleContextMenu(event: MouseEvent<HTMLButtonElement>, open: () => void) {
+    event.preventDefault();
+
+    if (canNavigate) {
+      open();
+    }
+  }
+
+  return (
+    <Popover
+      className="top-bar__history"
+      contentClassName={`top-bar__history-popover top-bar__history-popover--${direction}`}
+      contentId={`top-bar-${direction}-history`}
+      contentLabel={`${label} history`}
+      contentRole="menu"
+      renderTrigger={({ close, contentId, isOpen, open }) => (
+        <button
+          className="icon-button top-bar__history-button"
+          disabled={!canNavigate}
+          title={`${label} (right-click for history)`}
+          type="button"
+          aria-controls={isOpen ? contentId : undefined}
+          aria-expanded={isOpen}
+          aria-haspopup="menu"
+          onClick={() => {
+            close();
+            onStep();
+          }}
+          onContextMenu={(event) => handleContextMenu(event, open)}
+        >
+          <Icon aria-hidden="true" size={20} strokeWidth={2} />
+          <span className="sr-only">{label}</span>
+        </button>
+      )}
+    >
+      {({ close }) => (
+        <div className="top-bar__history-menu">
+          {items.map((item) => (
+            <button
+              className="top-bar__history-menu-item"
+              key={`${item.index}:${formatHistoryEntry(item.entry)}`}
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                close();
+                onJump(item.index);
+              }}
+            >
+              <span className="top-bar__history-menu-label">{formatHistoryEntry(item.entry)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+export function TopBar({
+  canGoBack,
+  canGoForward,
+  currentRoute,
+  historyEntries,
+  historyIndex,
+  onGoBack,
+  onGoForward,
+  onGoToHistoryIndex,
+  onNavigate,
+}: TopBarProps) {
   const [addressValue, setAddressValue] = useState('');
   const [addressError, setAddressError] = useState('');
 
   useEffect(() => {
-    if (currentRoute) {
-      setAddressValue(currentRoute.displayUrl);
-    }
+    setAddressValue(currentRoute?.displayUrl ?? '');
   }, [currentRoute]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -36,6 +161,22 @@ export function TopBar({ currentRoute, onNavigate }: TopBarProps) {
   return (
     <header className="top-bar">
       <form className="top-bar__address-form" onSubmit={handleSubmit}>
+        <HistoryButton
+          canNavigate={canGoBack}
+          direction="back"
+          historyEntries={historyEntries}
+          historyIndex={historyIndex}
+          onJump={onGoToHistoryIndex}
+          onStep={onGoBack}
+        />
+        <HistoryButton
+          canNavigate={canGoForward}
+          direction="forward"
+          historyEntries={historyEntries}
+          historyIndex={historyIndex}
+          onJump={onGoToHistoryIndex}
+          onStep={onGoForward}
+        />
         <label className="sr-only" htmlFor="qdn-address">
           QDN address
         </label>
@@ -45,7 +186,7 @@ export function TopBar({ currentRoute, onNavigate }: TopBarProps) {
             autoComplete="off"
             className="top-bar__address-input"
             id="qdn-address"
-            placeholder="qdn://APP"
+            placeholder="qdn://APP or qdn://*/name"
             spellCheck={false}
             type="text"
             value={addressValue}

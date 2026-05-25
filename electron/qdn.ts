@@ -5,6 +5,47 @@ import path from 'node:path';
 
 const NODE_API_URL = process.env.QORTIUM_HOME_NODE_API_URL ?? 'http://127.0.0.1:62391';
 const PREVIEW_API_KEY_PATH = path.join(os.homedir(), 'git', 'qortium', 'preview', 'apikey.txt');
+const PUBLIC_QDN_SERVICES = new Set([
+  'APP',
+  'WEBSITE',
+  'IMAGE',
+  'THUMBNAIL',
+  'QCHAT_IMAGE',
+  'VIDEO',
+  'AUDIO',
+  'VOICE',
+  'PODCAST',
+  'DOCUMENT',
+  'FILE',
+  'FILES',
+  'JSON',
+  'METADATA',
+  'BLOG',
+  'BLOG_POST',
+  'BLOG_COMMENT',
+  'LIST',
+  'PLAYLIST',
+  'GIT_REPOSITORY',
+  'GIF_REPOSITORY',
+  'STORE',
+  'PRODUCT',
+  'OFFER',
+  'COUPON',
+  'CODE',
+  'PLUGIN',
+  'EXTENSION',
+  'GAME',
+  'ITEM',
+  'NFT',
+  'DATABASE',
+  'SNAPSHOT',
+  'COMMENT',
+  'CHAIN_COMMENT',
+  'CHAIN_DATA',
+  'ATTACHMENT',
+  'MAIL',
+  'MESSAGE',
+]);
 
 type QdnAuthorizeResourceRequest = {
   identifier?: unknown;
@@ -63,8 +104,8 @@ function getAuthorizeRequest(value: QdnAuthorizeResourceRequest) {
   const name = getString(value.name);
   const identifier = getString(value.identifier);
 
-  if (service !== 'APP' && service !== 'WEBSITE') {
-    throw new Error('Only APP and WEBSITE QDN resources can be loaded right now.');
+  if (!PUBLIC_QDN_SERVICES.has(service)) {
+    throw new Error('Only public QDN resources can be loaded right now.');
   }
 
   if (!name) {

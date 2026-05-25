@@ -2,6 +2,7 @@
   "name": "qortium-home",
   "version": "0.1.0",
   "private": true,
+  "license": "0BSD",
   "description": "A simple Qortium Home desktop app.",
   "type": "module",
   "main": "dist-electron/main.js",
@@ -13,6 +14,8 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "dist:linux:x64": "npm run build && electron-builder --linux AppImage --x64",
+    "dist:win:x64": "npm run build && electron-builder --win portable --x64 --publish never",
+    "qdn:bootstrap-test-data": "node scripts/bootstrap-qdn-test-data.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -72,6 +75,17 @@
       ],
       "category": "Network",
       "executableName": "qortium-home"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
     }
   }
 }

@@ -1,16 +1,27 @@
 import { RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { QdnResource, QdnResourceStatus } from './qdn';
+import type { QdnResource, QdnResourceProperties, QdnResourceStatus, QdnViewerKind } from './qdn';
 import {
   buildQdnDownloadUrl,
+  buildQdnRawResourceUrl,
   buildQdnRenderUrl,
+  buildQdnResourcePropertiesUrl,
   buildQdnStatusUrl,
   formatQdnStatus,
   getQdnResourceKey,
+  getQdnViewerKind,
   isTerminalQdnStatus,
 } from './qdn';
 
 const STATUS_POLL_INTERVAL_MS = 5_000;
+
+type LoadedQdnResource = {
+  properties?: QdnResourceProperties;
+  rawUrl: string;
+  renderUrl: string;
+  status: QdnResourceStatus;
+  viewerKind: QdnViewerKind;
+};
 
 type QdnViewerState =
   | {
@@ -19,7 +30,7 @@ type QdnViewerState =
       status?: QdnResourceStatus;
     }
   | {
-      iframeUrl: string;
+      loadedResource: LoadedQdnResource;
       phase: 'ready';
       status: QdnResourceStatus;
     }
@@ -77,6 +88,27 @@ function getProgressText(status: QdnResourceStatus | undefined) {
   return typeof progress === 'number' ? `${progress.toFixed(0)}%` : '';
 }
 
+function formatBytes(bytes: number | undefined) {
+  if (typeof bytes !== 'number') {
+    return '';
+  }
+
+  if (bytes < 1024) {
+    return `${bytes.toLocaleString()} bytes`;
+  }
+
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unitIndex]}`;
+}
+
 async function readStatus(response: Response) {
   const text = await response.text();
 
@@ -87,8 +119,54 @@ async function readStatus(response: Response) {
   return JSON.parse(text) as QdnResourceStatus;
 }
 
-async function verifyRenderUrl(iframeUrl: string, signal: AbortSignal) {
-  const response = await fetch(iframeUrl, { signal });
+function isQdnResourceProperties(value: unknown): value is QdnResourceProperties {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const properties = value as Partial<QdnResourceProperties>;
+
+  return (
+    (properties.filename === undefined || typeof properties.filename === 'string') &&
+    (properties.mimeType === undefined || typeof properties.mimeType === 'string') &&
+    (properties.size === undefined || typeof properties.size === 'number')
+  );
+}
+
+async function readProperties(response: Response) {
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(text || `QDN properties request failed with HTTP ${response.status}.`);
+  }
+
+  const data: unknown = JSON.parse(text);
+
+  if (!isQdnResourceProperties(data)) {
+    throw new Error('QDN properties response did not match the expected shape.');
+  }
+
+  return data;
+}
+
+async function loadResourceProperties(resource: QdnResource, signal: AbortSignal) {
+  try {
+    const response = await fetch(buildQdnResourcePropertiesUrl(resource), {
+      signal,
+    });
+
+    return await readProperties(response);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+
+    return undefined;
+  }
+}
+
+async function verifyRenderUrl(renderUrl: string, signal: AbortSignal) {
+  const response = await fetch(renderUrl, { signal });
 
   if (response.status === 404) {
     throw new Error('File not found.');
@@ -98,18 +176,16 @@ async function verifyRenderUrl(iframeUrl: string, signal: AbortSignal) {
     const message = await response.text();
     throw new Error(message || `QDN render request failed with HTTP ${response.status}.`);
   }
+
+  await response.body?.cancel();
 }
 
-export function QdnViewer({ resource }: QdnViewerProps) {
+function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
   const [state, setState] = useState<QdnViewerState>({
     phase: 'loading',
     message: 'Checking QDN resource',
   });
-  const [retryToken, setRetryToken] = useState(0);
   const resourceKey = useMemo(() => getQdnResourceKey(resource), [resource]);
-  const progress = state.phase === 'ready' ? 100 : getStatusProgress(state.status);
-  const progressText = getProgressText(state.status);
-  const statusLabel = state.phase === 'ready' ? 'Ready' : formatQdnStatus(state.status);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -141,6 +217,30 @@ export function QdnViewer({ resource }: QdnViewerProps) {
       }
     }
 
+    async function setReadyState(status: QdnResourceStatus) {
+      const viewerKind = getQdnViewerKind(resource.service);
+      const renderUrl = buildQdnRenderUrl(resource);
+      const rawUrl = buildQdnRawResourceUrl(resource);
+
+      if (viewerKind !== 'unsupported') {
+        await verifyRenderUrl(renderUrl, abortController.signal);
+      }
+
+      const properties = await loadResourceProperties(resource, abortController.signal);
+
+      setSafeState({
+        phase: 'ready',
+        status,
+        loadedResource: {
+          properties,
+          rawUrl,
+          renderUrl,
+          status,
+          viewerKind,
+        },
+      });
+    }
+
     async function pollStatus(build: boolean) {
       try {
         const statusResponse = await fetch(buildQdnStatusUrl(resource, build), {
@@ -149,14 +249,7 @@ export function QdnViewer({ resource }: QdnViewerProps) {
         const status = await readStatus(statusResponse);
 
         if (status.status === 'READY') {
-          const iframeUrl = buildQdnRenderUrl(resource);
-
-          await verifyRenderUrl(iframeUrl, abortController.signal);
-          setSafeState({
-            phase: 'ready',
-            iframeUrl,
-            status,
-          });
+          await setReadyState(status);
           return;
         }
 
@@ -228,6 +321,85 @@ export function QdnViewer({ resource }: QdnViewerProps) {
     };
   }, [resource, resourceKey, retryToken]);
 
+  return state;
+}
+
+function QdnReadyContent({
+  loadedResource,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  resource: QdnResource;
+}) {
+  if (loadedResource.viewerKind === 'iframe') {
+    return (
+      <iframe
+        className="qdn-viewer__frame"
+        key={loadedResource.renderUrl}
+        title={resource.displayUrl}
+        src={loadedResource.renderUrl}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals"
+        allow="fullscreen; clipboard-read; clipboard-write; screen-wake-lock"
+      />
+    );
+  }
+
+  if (loadedResource.viewerKind === 'image') {
+    return (
+      <div className="qdn-viewer__image-stage">
+        <img
+          className="qdn-viewer__image"
+          alt={loadedResource.properties?.filename || resource.displayUrl}
+          src={loadedResource.renderUrl}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="qdn-viewer__empty qdn-viewer__empty--ready">
+      <div className="qdn-viewer__details">
+        <p className="qdn-viewer__message">{resource.service} resources do not have a viewer yet.</p>
+        <dl className="detail-list qdn-viewer__detail-list">
+          <div className="detail-list__row">
+            <dt className="detail-list__label">Service</dt>
+            <dd className="detail-list__value">{resource.service}</dd>
+          </div>
+          <div className="detail-list__row">
+            <dt className="detail-list__label">Status</dt>
+            <dd className="detail-list__value">{formatQdnStatus(loadedResource.status)}</dd>
+          </div>
+          {loadedResource.properties?.filename ? (
+            <div className="detail-list__row">
+              <dt className="detail-list__label">File</dt>
+              <dd className="detail-list__value">{loadedResource.properties.filename}</dd>
+            </div>
+          ) : null}
+          {loadedResource.properties?.mimeType ? (
+            <div className="detail-list__row">
+              <dt className="detail-list__label">Type</dt>
+              <dd className="detail-list__value">{loadedResource.properties.mimeType}</dd>
+            </div>
+          ) : null}
+          {loadedResource.properties?.size ? (
+            <div className="detail-list__row">
+              <dt className="detail-list__label">Size</dt>
+              <dd className="detail-list__value">{formatBytes(loadedResource.properties.size)}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+export function QdnViewer({ resource }: QdnViewerProps) {
+  const [retryToken, setRetryToken] = useState(0);
+  const state = useQdnResourceLoader(resource, retryToken);
+  const progress = state.phase === 'ready' ? 100 : getStatusProgress(state.status);
+  const progressText = getProgressText(state.status);
+  const statusLabel = state.phase === 'ready' ? 'Ready' : formatQdnStatus(state.status);
+
   return (
     <section className="qdn-viewer" aria-label="QDN viewer">
       <div className="qdn-viewer__status" aria-live="polite">
@@ -252,14 +424,7 @@ export function QdnViewer({ resource }: QdnViewerProps) {
       </div>
 
       {state.phase === 'ready' ? (
-        <iframe
-          className="qdn-viewer__frame"
-          key={state.iframeUrl}
-          title={resource.displayUrl}
-          src={state.iframeUrl}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals"
-          allow="fullscreen; clipboard-read; clipboard-write; screen-wake-lock"
-        />
+        <QdnReadyContent loadedResource={state.loadedResource} resource={resource} />
       ) : (
         <div className={`qdn-viewer__empty qdn-viewer__empty--${state.phase}`}>
           <p className="qdn-viewer__message">{state.message}</p>

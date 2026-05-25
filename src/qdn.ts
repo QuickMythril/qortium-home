@@ -1,6 +1,54 @@
 export const NODE_API_URL = 'http://127.0.0.1:62391';
 
-export type QdnService = 'APP' | 'WEBSITE';
+export const PUBLIC_QDN_SERVICES = [
+  'APP',
+  'WEBSITE',
+  'IMAGE',
+  'THUMBNAIL',
+  'QCHAT_IMAGE',
+  'VIDEO',
+  'AUDIO',
+  'VOICE',
+  'PODCAST',
+  'DOCUMENT',
+  'FILE',
+  'FILES',
+  'JSON',
+  'METADATA',
+  'BLOG',
+  'BLOG_POST',
+  'BLOG_COMMENT',
+  'LIST',
+  'PLAYLIST',
+  'GIT_REPOSITORY',
+  'GIF_REPOSITORY',
+  'STORE',
+  'PRODUCT',
+  'OFFER',
+  'COUPON',
+  'CODE',
+  'PLUGIN',
+  'EXTENSION',
+  'GAME',
+  'ITEM',
+  'NFT',
+  'DATABASE',
+  'SNAPSHOT',
+  'COMMENT',
+  'CHAIN_COMMENT',
+  'CHAIN_DATA',
+  'ATTACHMENT',
+  'MAIL',
+  'MESSAGE',
+] as const;
+
+const IFRAME_QDN_SERVICES = ['APP', 'WEBSITE'] as const;
+const IMAGE_QDN_SERVICES = ['IMAGE', 'THUMBNAIL', 'QCHAT_IMAGE'] as const;
+const RENDERABLE_QDN_SERVICES = [...IFRAME_QDN_SERVICES, ...IMAGE_QDN_SERVICES] as const;
+
+export type QdnService = (typeof PUBLIC_QDN_SERVICES)[number];
+export type QdnRenderableService = (typeof RENDERABLE_QDN_SERVICES)[number];
+export type QdnViewerKind = 'iframe' | 'image' | 'unsupported';
 
 export type QdnExplorerRoute =
   | {
@@ -11,6 +59,11 @@ export type QdnExplorerRoute =
       displayUrl: string;
       kind: 'service';
       service: QdnService;
+    }
+  | {
+      displayUrl: string;
+      kind: 'name-services';
+      name: string;
     }
   | {
       displayUrl: string;
@@ -43,6 +96,12 @@ export type QdnResourceStatus = {
   status?: string;
   title?: string;
   totalChunkCount?: number;
+};
+
+export type QdnResourceProperties = {
+  filename?: string;
+  mimeType?: string;
+  size?: number;
 };
 
 export type QdnResourceListItem = {
@@ -109,8 +168,24 @@ function encodeDisplayPath(path: string) {
   return path.startsWith('?') ? `/${path}` : `/${path}`;
 }
 
-function isQdnService(value: string): value is QdnService {
-  return value === 'APP' || value === 'WEBSITE';
+export function isQdnService(value: string): value is QdnService {
+  return PUBLIC_QDN_SERVICES.includes(value as QdnService);
+}
+
+export function isQdnRenderableService(value: QdnService): value is QdnRenderableService {
+  return RENDERABLE_QDN_SERVICES.includes(value as QdnRenderableService);
+}
+
+export function getQdnViewerKind(service: QdnService): QdnViewerKind {
+  if (IFRAME_QDN_SERVICES.includes(service as (typeof IFRAME_QDN_SERVICES)[number])) {
+    return 'iframe';
+  }
+
+  if (IMAGE_QDN_SERVICES.includes(service as (typeof IMAGE_QDN_SERVICES)[number])) {
+    return 'image';
+  }
+
+  return 'unsupported';
 }
 
 function buildQdnServiceUrl(service: QdnService) {
@@ -119,6 +194,10 @@ function buildQdnServiceUrl(service: QdnService) {
 
 function buildQdnNameUrl(service: QdnService, name: string) {
   return `${buildQdnServiceUrl(service)}/${encodeURIComponent(name)}`;
+}
+
+function buildQdnWildcardNameUrl(name: string) {
+  return `qdn://*/${encodeURIComponent(name)}`;
 }
 
 export function buildQdnDisplayUrl(resource: Omit<QdnResource, 'displayUrl'>) {
@@ -132,15 +211,18 @@ export function parseQdnUrl(value: string): QdnParseResult {
 
   if (!input) {
     return {
-      success: false,
-      message: 'Enter a QDN link.',
+      success: true,
+      route: {
+        kind: 'services',
+        displayUrl: 'qdn://',
+      },
     };
   }
 
   if (!/^qdn:\/\//i.test(input)) {
     return {
       success: false,
-      message: 'Enter a qdn:// APP or WEBSITE link.',
+      message: 'Enter a qdn:// link.',
     };
   }
 
@@ -162,10 +244,38 @@ export function parseQdnUrl(value: string): QdnParseResult {
   const parts = basePart.replace(/^\/+/, '').split('/');
   const service = decodeSegment(parts.shift() ?? '').toUpperCase();
 
+  if (service === '*') {
+    const name = decodeSegment(parts.shift() ?? '').trim();
+    const hasExtraPath = parts.some((part) => part.trim());
+
+    if (!name) {
+      return {
+        success: false,
+        message: 'Enter a name after qdn://*/.',
+      };
+    }
+
+    if (hasExtraPath || queryString) {
+      return {
+        success: false,
+        message: 'Wildcard QDN links only support qdn://*/name.',
+      };
+    }
+
+    return {
+      success: true,
+      route: {
+        kind: 'name-services',
+        name,
+        displayUrl: buildQdnWildcardNameUrl(name),
+      },
+    };
+  }
+
   if (!isQdnService(service)) {
     return {
       success: false,
-      message: 'Only APP and WEBSITE QDN links can be loaded right now.',
+      message: 'Only public QDN services can be browsed right now.',
     };
   }
 
@@ -251,21 +361,64 @@ export function buildQdnDownloadUrl(resource: QdnResource) {
   )}${identifierPath}?async=true`;
 }
 
-export function buildQdnResourcesSearchUrl(route: Extract<QdnExplorerRoute, { kind: 'service' | 'name' }>) {
+export function buildQdnRawResourceUrl(resource: QdnResource, attachment = false) {
+  const identifierPath = resource.identifier ? `/${encodeURIComponent(resource.identifier)}` : '';
+  const { pathOnly, queryString } = splitPathAndQuery(resource.path);
+  const queryParams = new URLSearchParams(queryString);
+
+  if (pathOnly) {
+    queryParams.set('filepath', pathOnly);
+  }
+
+  if (attachment) {
+    queryParams.set('attachment', 'true');
+  }
+
+  const rawQueryString = queryParams.toString();
+
+  return `${NODE_API_URL}/arbitrary/${resource.service}/${encodeURIComponent(resource.name)}${identifierPath}${
+    rawQueryString ? `?${rawQueryString}` : ''
+  }`;
+}
+
+export function buildQdnResourcesSearchUrl(
+  route: Extract<QdnExplorerRoute, { kind: 'service' | 'name' | 'name-services' }>,
+) {
   const queryParams = new URLSearchParams({
-    service: route.service,
     mode: 'ALL',
     limit: '0',
     includestatus: 'true',
     includemetadata: 'true',
   });
 
-  if (route.kind === 'name') {
+  if (route.kind !== 'name-services') {
+    queryParams.set('service', route.service);
+  }
+
+  if (route.kind === 'name' || route.kind === 'name-services') {
     queryParams.set('name', route.name);
     queryParams.set('exactmatchnames', 'true');
   }
 
   return `${NODE_API_URL}/arbitrary/resources/search?${queryParams.toString()}`;
+}
+
+export function buildQdnServiceAvailabilitySearchUrl(service: QdnService) {
+  const queryParams = new URLSearchParams({
+    service,
+    mode: 'ALL',
+    limit: '1',
+    includestatus: 'false',
+    includemetadata: 'false',
+  });
+
+  return `${NODE_API_URL}/arbitrary/resources/search?${queryParams.toString()}`;
+}
+
+export function buildQdnResourcePropertiesUrl(resource: QdnResource) {
+  return `${NODE_API_URL}/arbitrary/resource/properties/${resource.service}/${encodeURIComponent(
+    resource.name,
+  )}/${encodeURIComponent(resource.identifier ?? 'default')}`;
 }
 
 export function buildQdnRenderUrl(resource: QdnResource) {

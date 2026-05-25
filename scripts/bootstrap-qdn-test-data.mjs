@@ -1,0 +1,555 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import path from 'node:path';
+
+const DEFAULT_NODE_API_URL = 'http://127.0.0.1:62391';
+const DEFAULT_NAME = 'QortiumHomeTest';
+const APP_IDENTIFIER = 'home-test';
+const IMAGE_IDENTIFIER = 'home-image';
+const POLL_INTERVAL_MS = 5_000;
+const POLL_TIMEOUT_MS = 180_000;
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const BASE58_BASE = BigInt(BASE58_ALPHABET.length);
+const REGISTER_NAME_TRANSACTION_TYPE = 3;
+
+const nodeApiUrl = (process.env.QORTIUM_HOME_NODE_API_URL ?? DEFAULT_NODE_API_URL).replace(/\/+$/, '');
+const testName = process.env.QORTIUM_HOME_TEST_NAME ?? DEFAULT_NAME;
+const apiKeyPath = expandHomePath(
+  process.env.QORTIUM_HOME_NODE_API_KEY_PATH ?? '~/git/qortium/preview/apikey.txt',
+);
+const previewAccountsPath = expandHomePath(
+  process.env.QORTIUM_HOME_PREVIEW_ACCOUNTS_PATH ??
+    '~/git/qortium/preview/secrets/initial-minting-accounts.json',
+);
+
+function expandHomePath(filePath) {
+  if (filePath === '~') {
+    return homedir();
+  }
+
+  if (filePath.startsWith('~/')) {
+    return path.join(homedir(), filePath.slice(2));
+  }
+
+  return filePath;
+}
+
+function readJson(filePath) {
+  return JSON.parse(readFileSync(filePath, 'utf8'));
+}
+
+function readText(filePath) {
+  return readFileSync(filePath, 'utf8').trim();
+}
+
+function decodeBase58(value) {
+  let decoded = 0n;
+
+  for (const character of value) {
+    const index = BASE58_ALPHABET.indexOf(character);
+
+    if (index === -1) {
+      throw new Error(`Invalid Base58 character: ${character}`);
+    }
+
+    decoded = decoded * BASE58_BASE + BigInt(index);
+  }
+
+  const bytes = [];
+
+  while (decoded > 0n) {
+    bytes.unshift(Number(decoded % 256n));
+    decoded /= 256n;
+  }
+
+  for (const character of value) {
+    if (character !== '1') {
+      break;
+    }
+
+    bytes.unshift(0);
+  }
+
+  return Buffer.from(bytes);
+}
+
+function encodeBase58(bytes) {
+  let value = 0n;
+
+  for (const byte of bytes) {
+    value = value * 256n + BigInt(byte);
+  }
+
+  let encoded = '';
+
+  while (value > 0n) {
+    const remainder = Number(value % BASE58_BASE);
+    value /= BASE58_BASE;
+    encoded = BASE58_ALPHABET[remainder] + encoded;
+  }
+
+  for (const byte of bytes) {
+    if (byte !== 0) {
+      break;
+    }
+
+    encoded = '1' + encoded;
+  }
+
+  return encoded || '1';
+}
+
+function intBytes(value) {
+  const bytes = Buffer.alloc(4);
+  bytes.writeInt32BE(value);
+
+  return bytes;
+}
+
+function longBytes(value) {
+  const bytes = Buffer.alloc(8);
+  bytes.writeBigInt64BE(BigInt(value));
+
+  return bytes;
+}
+
+function sizedStringBytes(value) {
+  const stringBytes = Buffer.from(value, 'utf8');
+
+  return Buffer.concat([intBytes(stringBytes.length), stringBytes]);
+}
+
+function buildRegisterNameRawBytes58({ account, data, name, timestamp }) {
+  const publicKey = decodeBase58(account.accountPublicKey);
+
+  if (publicKey.length !== 32) {
+    throw new Error(`Local account public key must decode to 32 bytes, got ${publicKey.length}.`);
+  }
+
+  return encodeBase58(
+    Buffer.concat([
+      intBytes(REGISTER_NAME_TRANSACTION_TYPE),
+      longBytes(timestamp),
+      intBytes(0),
+      publicKey,
+      intBytes(0),
+      sizedStringBytes(name),
+      sizedStringBytes(data),
+      longBytes(0),
+    ]),
+  );
+}
+
+function getApiKey() {
+  const explicitApiKey = process.env.QORTIUM_HOME_NODE_API_KEY?.trim();
+
+  if (explicitApiKey) {
+    return explicitApiKey;
+  }
+
+  return readText(apiKeyPath);
+}
+
+function getLocalPreviewAccount() {
+  const previewAccounts = readJson(previewAccountsPath);
+  const account = previewAccounts.accounts?.find((item) => item.role === 'local');
+
+  if (!account?.accountAddress || !account?.accountPrivateKey || !account?.accountPublicKey) {
+    throw new Error(`Local preview account was not found in ${previewAccountsPath}.`);
+  }
+
+  return account;
+}
+
+function getHeaders(contentType) {
+  const headers = {
+    'X-API-KEY': apiKey,
+  };
+
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+  }
+
+  return headers;
+}
+
+async function request(pathname, options = {}) {
+  const response = await fetch(`${nodeApiUrl}${pathname}`, {
+    ...options,
+    headers: {
+      ...(options.headers ?? {}),
+    },
+  });
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(text || `${options.method ?? 'GET'} ${pathname} failed with HTTP ${response.status}.`);
+  }
+
+  return text;
+}
+
+async function requestJson(pathname, options = {}) {
+  const text = await request(pathname, options);
+
+  return text ? JSON.parse(text) : null;
+}
+
+function appendQuery(pathname, query) {
+  const queryParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        queryParams.append(key, item);
+      }
+      continue;
+    }
+
+    queryParams.set(key, String(value));
+  }
+
+  const queryString = queryParams.toString();
+
+  return queryString ? `${pathname}?${queryString}` : pathname;
+}
+
+async function waitFor(label, predicate) {
+  const startedAt = Date.now();
+  let lastError;
+
+  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+    try {
+      const result = await predicate();
+
+      if (result) {
+        return result;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+
+  throw new Error(
+    `Timed out waiting for ${label}.${lastError instanceof Error ? ` Last error: ${lastError.message}` : ''}`,
+  );
+}
+
+async function signAndProcess(rawUnsignedBytes58, privateKey58) {
+  const signedBytes58 = await request('/transactions/sign', {
+    method: 'POST',
+    headers: getHeaders('application/json'),
+    body: JSON.stringify({
+      privateKey: privateKey58,
+      transactionBytes: rawUnsignedBytes58,
+    }),
+  });
+
+  const processResult = await request('/transactions/process', {
+    method: 'POST',
+    headers: getHeaders('text/plain'),
+    body: signedBytes58,
+  });
+
+  if (processResult.trim() !== 'true' && !processResult.includes('"type"')) {
+    throw new Error(`Transaction was not accepted: ${processResult}`);
+  }
+
+  return signedBytes58;
+}
+
+async function getNameInfo(name) {
+  const response = await fetch(`${nodeApiUrl}/names/${encodeURIComponent(name)}`);
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(text || `Name lookup failed with HTTP ${response.status}.`);
+  }
+
+  return JSON.parse(text);
+}
+
+async function ensureNameRegistered(name, account) {
+  const existingName = await getNameInfo(name);
+
+  if (existingName) {
+    if (existingName.owner !== account.accountAddress) {
+      throw new Error(`${name} is already registered to ${existingName.owner}.`);
+    }
+
+    console.log(`Name already registered: ${name} (${existingName.owner})`);
+    return;
+  }
+
+  console.log(`Registering name with mempow: ${name}`);
+
+  const rawRegisterBytes58 = buildRegisterNameRawBytes58({
+    account,
+    timestamp: Date.now(),
+    name,
+    data: JSON.stringify({
+      app: 'Qortium Home',
+      purpose: 'QDN browser test fixtures',
+    }),
+  });
+  const rawRegisterWithNonce58 = await request('/transactions/mempow/compute', {
+    method: 'POST',
+    headers: getHeaders('text/plain'),
+    body: rawRegisterBytes58,
+  });
+
+  await signAndProcess(rawRegisterWithNonce58, account.accountPrivateKey);
+  await waitFor(`name ${name}`, async () => {
+    const nameInfo = await getNameInfo(name);
+
+    return nameInfo?.owner === account.accountAddress ? nameInfo : null;
+  });
+
+  console.log(`Name registered: ${name}`);
+}
+
+function createFixtureFiles() {
+  const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'qortium-home-qdn-'));
+  const appDirectory = path.join(fixtureRoot, 'app');
+  const websiteDirectory = path.join(fixtureRoot, 'website');
+  const imagePath = path.join(fixtureRoot, 'qortium-home-test-image.svg');
+
+  mkdirSync(appDirectory);
+  mkdirSync(websiteDirectory);
+
+  writeFileSync(
+    path.join(fixtureRoot, 'README.txt'),
+    'Temporary Qortium Home QDN bootstrap fixtures.\n',
+    'utf8',
+  );
+
+  writeFileSync(
+    path.join(appDirectory, 'index.html'),
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Qortium Home APP Test</title>
+    <style>
+      body {
+        margin: 0;
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        color: #f4f0e8;
+        background: #0f1313;
+        font-family: system-ui, sans-serif;
+      }
+      main {
+        display: grid;
+        gap: 12px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: 32px;
+      }
+      p {
+        margin: 0;
+        color: #a9b6b6;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Qortium Home APP Test</h1>
+      <p>Loaded from qdn://APP/${testName}/${APP_IDENTIFIER}</p>
+    </main>
+  </body>
+</html>
+`,
+    'utf8',
+  );
+
+  writeFileSync(
+    path.join(websiteDirectory, 'index.html'),
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Qortium Home WEBSITE Test</title>
+    <style>
+      body {
+        margin: 0;
+        color: #162020;
+        background: #f4f0e8;
+        font-family: system-ui, sans-serif;
+      }
+      main {
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        padding: 32px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 32px;
+      }
+      p {
+        margin: 0;
+        color: #4d5d5d;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Qortium Home WEBSITE Test</h1>
+        <p>Loaded from qdn://WEBSITE/${testName}/default</p>
+      </section>
+    </main>
+  </body>
+</html>
+`,
+    'utf8',
+  );
+
+  writeFileSync(
+    imagePath,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-label="Qortium Home test image">
+  <rect width="800" height="450" fill="#0f1313"/>
+  <rect x="48" y="48" width="704" height="354" rx="24" fill="#192020" stroke="#344141" stroke-width="4"/>
+  <path d="M180 238 L286 132 L392 238 L312 238 L312 318 L248 318 L248 238 Z" fill="#87d99b"/>
+  <circle cx="560" cy="168" r="46" fill="#e4c06d"/>
+  <text x="400" y="344" text-anchor="middle" font-family="system-ui, sans-serif" font-size="42" font-weight="700" fill="#f4f0e8">Qortium Home IMAGE Test</text>
+  <text x="400" y="384" text-anchor="middle" font-family="system-ui, sans-serif" font-size="24" fill="#a9b6b6">qdn://IMAGE/${testName}/${IMAGE_IDENTIFIER}</text>
+</svg>
+`,
+    'utf8',
+  );
+
+  return {
+    appDirectory,
+    fixtureRoot,
+    imagePath,
+    websiteDirectory,
+  };
+}
+
+async function publishResource({ description, identifier, path: resourcePath, service, title }) {
+  const resourcePathname = identifier
+    ? `/arbitrary/${service}/${encodeURIComponent(testName)}/${encodeURIComponent(identifier)}`
+    : `/arbitrary/${service}/${encodeURIComponent(testName)}`;
+  const rawUnsignedBytes58 = await request(
+    appendQuery(resourcePathname, {
+      title,
+      description,
+      fee: 0,
+    }),
+    {
+      method: 'POST',
+      headers: getHeaders('text/plain'),
+      body: resourcePath,
+    },
+  );
+  const rawUnsignedWithNonce58 = await request('/arbitrary/compute', {
+    method: 'POST',
+    headers: getHeaders('text/plain'),
+    body: rawUnsignedBytes58,
+  });
+
+  await signAndProcess(rawUnsignedWithNonce58, account.accountPrivateKey);
+
+  console.log(`Published ${service}: qdn://${service}/${testName}/${identifier ?? 'default'}`);
+}
+
+async function getResourceStatus(service, identifier) {
+  const identifierPath = identifier ? `/${encodeURIComponent(identifier)}` : '';
+
+  return requestJson(
+    `/arbitrary/resource/status/${service}/${encodeURIComponent(testName)}${identifierPath}?build=true`,
+    {
+      headers: getHeaders(),
+    },
+  );
+}
+
+async function waitForResourceReady(service, identifier) {
+  await waitFor(`${service} ${identifier ?? 'default'} resource`, async () => {
+    const status = await getResourceStatus(service, identifier);
+
+    if (status?.status === 'READY') {
+      return status;
+    }
+
+    if (status?.status === 'BLOCKED' || status?.status === 'BUILD_FAILED' || status?.status === 'UNSUPPORTED') {
+      throw new Error(`${service} ${identifier ?? 'default'} status is ${status.status}.`);
+    }
+
+    return null;
+  });
+
+  console.log(`Ready ${service}: qdn://${service}/${testName}/${identifier ?? 'default'}`);
+}
+
+const apiKey = getApiKey();
+const account = getLocalPreviewAccount();
+
+console.log(`Node: ${nodeApiUrl}`);
+console.log(`Owner: ${account.accountAddress}`);
+console.log(`Name: ${testName}`);
+
+const status = await requestJson('/admin/status');
+
+if (!status || status.syncPercent !== 100 || status.isSynchronizing) {
+  throw new Error(`Node is not synced: ${JSON.stringify(status)}`);
+}
+
+console.log(`Node synced at height ${status.height}.`);
+
+const fixtures = createFixtureFiles();
+
+try {
+  await ensureNameRegistered(testName, account);
+
+  await publishResource({
+    service: 'APP',
+    identifier: APP_IDENTIFIER,
+    path: fixtures.appDirectory,
+    title: 'Qortium Home APP Test',
+    description: 'Temporary Qortium Home QDN browser test app',
+  });
+  await publishResource({
+    service: 'WEBSITE',
+    path: fixtures.websiteDirectory,
+    title: 'Qortium Home WEBSITE Test',
+    description: 'Temporary Qortium Home QDN browser test website',
+  });
+  await publishResource({
+    service: 'IMAGE',
+    identifier: IMAGE_IDENTIFIER,
+    path: fixtures.imagePath,
+    title: 'Qortium Home IMAGE Test',
+    description: 'Temporary Qortium Home QDN browser test image',
+  });
+
+  await waitForResourceReady('APP', APP_IDENTIFIER);
+  await waitForResourceReady('WEBSITE');
+  await waitForResourceReady('IMAGE', IMAGE_IDENTIFIER);
+
+  console.log('QDN test data bootstrap complete.');
+  console.log(`APP: qdn://APP/${testName}/${APP_IDENTIFIER}`);
+  console.log(`WEBSITE: qdn://WEBSITE/${testName}/default`);
+  console.log(`IMAGE: qdn://IMAGE/${testName}/${IMAGE_IDENTIFIER}`);
+} finally {
+  rmSync(fixtures.fixtureRoot, { recursive: true, force: true });
+}

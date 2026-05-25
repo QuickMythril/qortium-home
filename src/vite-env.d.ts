@@ -32,7 +32,7 @@ type QortiumCreateWalletResult = QortiumAccountsState & {
 type QortiumQdnAuthorizeRequest = {
   identifier?: string;
   name: string;
-  service: 'APP' | 'WEBSITE';
+  service: string;
 };
 
 type QortiumQdnAuthorizeResult = {

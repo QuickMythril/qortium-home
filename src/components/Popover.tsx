@@ -5,15 +5,21 @@ type PopoverTriggerProps = {
   close: () => void;
   contentId: string;
   isOpen: boolean;
+  open: () => void;
   toggle: () => void;
 };
 
+type PopoverContentProps = {
+  close: () => void;
+};
+
 type PopoverProps = {
-  children: ReactNode;
+  children: ReactNode | ((props: PopoverContentProps) => ReactNode);
   className?: string;
   contentClassName?: string;
   contentId: string;
   contentLabel: string;
+  contentRole?: 'dialog' | 'menu';
   renderTrigger: (props: PopoverTriggerProps) => ReactNode;
 };
 
@@ -23,6 +29,7 @@ export function Popover({
   contentClassName,
   contentId,
   contentLabel,
+  contentRole = 'dialog',
   renderTrigger,
 }: PopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -59,19 +66,21 @@ export function Popover({
   }, [isOpen]);
 
   const popoverClassName = ['popover-panel', contentClassName].filter(Boolean).join(' ');
+  const close = () => setIsOpen(false);
 
   return (
     <div className={className} ref={containerRef}>
       {renderTrigger({
-        close: () => setIsOpen(false),
+        close,
         contentId,
         isOpen,
+        open: () => setIsOpen(true),
         toggle: () => setIsOpen((current) => !current),
       })}
 
       {isOpen ? (
-        <section className={popoverClassName} id={contentId} role="dialog" aria-label={contentLabel}>
-          {children}
+        <section className={popoverClassName} id={contentId} role={contentRole} aria-label={contentLabel}>
+          {typeof children === 'function' ? children({ close }) : children}
         </section>
       ) : null}
     </div>

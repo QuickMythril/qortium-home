@@ -2,10 +2,16 @@ import { FileText, Folder, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { QdnExplorerRoute, QdnResourceListItem, QdnRoute, QdnService } from './qdn';
 import {
+  PUBLIC_QDN_SERVICES,
+  buildQdnRenderUrl,
+  buildQdnServiceAvailabilitySearchUrl,
   buildQdnResourcesSearchUrl,
   buildQdnRouteFromListItem,
   formatQdnStatus,
   getQdnItemIdentifier,
+  getQdnViewerKind,
+  isQdnRenderableService,
+  isQdnService,
 } from './qdn';
 
 type QdnExplorerProps = {
@@ -35,7 +41,24 @@ type NameRow = {
   status?: QdnResourceListItem['status'];
 };
 
-const SUPPORTED_SERVICES: QdnService[] = ['APP', 'WEBSITE'];
+type ServiceRow = {
+  count: number;
+  created?: number;
+  service: QdnService;
+  status?: QdnResourceListItem['status'];
+};
+
+type QdnImagePreviewState =
+  | {
+      phase: 'loading';
+    }
+  | {
+      phase: 'ready';
+      url: string;
+    }
+  | {
+      phase: 'error';
+    };
 
 function formatError(error: unknown) {
   if (!(error instanceof Error)) {
@@ -54,7 +77,8 @@ function isQdnResourceListItem(value: unknown): value is QdnResourceListItem {
 
   return (
     typeof item.name === 'string' &&
-    (item.service === 'APP' || item.service === 'WEBSITE') &&
+    typeof item.service === 'string' &&
+    isQdnService(item.service) &&
     (item.identifier === undefined || typeof item.identifier === 'string')
   );
 }
@@ -104,6 +128,27 @@ function getNameRows(resources: QdnResourceListItem[]) {
   );
 }
 
+function getServiceRows(resources: QdnResourceListItem[]) {
+  const rowsByService = new Map<QdnService, ServiceRow>();
+
+  for (const resource of resources) {
+    const currentRow = rowsByService.get(resource.service);
+    const currentCreated = currentRow?.created ?? 0;
+    const nextCreated = resource.created ?? 0;
+
+    rowsByService.set(resource.service, {
+      service: resource.service,
+      count: (currentRow?.count ?? 0) + 1,
+      created: Math.max(currentCreated, nextCreated) || undefined,
+      status: nextCreated >= currentCreated ? resource.status : currentRow?.status,
+    });
+  }
+
+  return PUBLIC_QDN_SERVICES.map((service) => rowsByService.get(service)).filter(
+    (row): row is ServiceRow => row !== undefined,
+  );
+}
+
 function getRouteHeading(route: QdnExplorerRoute) {
   if (route.kind === 'services') {
     return 'QDN';
@@ -113,7 +158,95 @@ function getRouteHeading(route: QdnExplorerRoute) {
     return route.service;
   }
 
+  if (route.kind === 'name-services') {
+    return route.name;
+  }
+
   return `${route.service} / ${route.name}`;
+}
+
+function formatExplorerStatus(status: QdnResourceListItem['status']) {
+  return status?.status ? formatQdnStatus(status) : 'Published';
+}
+
+function formatResourceMeta(resource: QdnResourceListItem) {
+  return [
+    formatExplorerStatus(resource.status),
+    resource.size ? `${resource.size.toLocaleString()} bytes` : '',
+    resource.created ? formatDate(resource.created) : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
+function QdnImageResourcePreview({ resource }: { resource: QdnResourceListItem }) {
+  const [state, setState] = useState<QdnImagePreviewState>({
+    phase: 'loading',
+  });
+  const identifier = resource.identifier || undefined;
+  const fallbackIcon = (
+    <span className="qdn-explorer__row-preview qdn-explorer__row-preview--fallback">
+      <FileText aria-hidden="true" size={22} strokeWidth={2} />
+    </span>
+  );
+
+  useEffect(() => {
+    const route = buildQdnRouteFromListItem(resource);
+    let isDisposed = false;
+
+    async function loadPreview() {
+      setState({
+        phase: 'loading',
+      });
+
+      try {
+        await window.qortiumHome.qdn.authorizeResource({
+          service: route.resource.service,
+          name: route.resource.name,
+          identifier: route.resource.identifier,
+        });
+
+        if (!isDisposed) {
+          setState({
+            phase: 'ready',
+            url: buildQdnRenderUrl(route.resource),
+          });
+        }
+      } catch {
+        if (!isDisposed) {
+          setState({
+            phase: 'error',
+          });
+        }
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [identifier, resource.name, resource.service]);
+
+  if (state.phase !== 'ready') {
+    return fallbackIcon;
+  }
+
+  return (
+    <span className="qdn-explorer__row-preview">
+      <img
+        alt=""
+        className="qdn-explorer__row-preview-image"
+        loading="lazy"
+        src={state.url}
+        onError={() =>
+          setState({
+            phase: 'error',
+          })
+        }
+      />
+    </span>
+  );
 }
 
 export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
@@ -123,16 +256,9 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
   });
   const [retryToken, setRetryToken] = useState(0);
   const nameRows = useMemo(() => getNameRows(state.resources), [state.resources]);
+  const serviceRows = useMemo(() => getServiceRows(state.resources), [state.resources]);
 
   useEffect(() => {
-    if (route.kind === 'services') {
-      setState({
-        phase: 'idle',
-        resources: [],
-      });
-      return;
-    }
-
     const abortController = new AbortController();
     let isDisposed = false;
 
@@ -143,10 +269,22 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
       }));
 
       try {
-        const response = await fetch(buildQdnResourcesSearchUrl(route), {
-          signal: abortController.signal,
-        });
-        const resources = await readResources(response);
+        const resources =
+          route.kind === 'services'
+            ? (
+                await Promise.all(
+                  PUBLIC_QDN_SERVICES.map(async (service) => {
+                    const response = await fetch(buildQdnServiceAvailabilitySearchUrl(service), {
+                      signal: abortController.signal,
+                    });
+
+                    return readResources(response);
+                  }),
+                )
+              ).flat()
+            : await fetch(buildQdnResourcesSearchUrl(route), {
+                signal: abortController.signal,
+              }).then(readResources);
 
         if (!isDisposed) {
           setState({
@@ -184,17 +322,15 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
           <h2>{getRouteHeading(route)}</h2>
           <p>{route.displayUrl}</p>
         </div>
-        {route.kind !== 'services' ? (
-          <button
-            className="button button--secondary qdn-explorer__refresh"
-            type="button"
-            disabled={state.phase === 'loading'}
-            onClick={() => setRetryToken((currentToken) => currentToken + 1)}
-          >
-            <RefreshCw aria-hidden="true" size={18} strokeWidth={2} />
-            Refresh
-          </button>
-        ) : null}
+        <button
+          className="button button--secondary qdn-explorer__refresh"
+          type="button"
+          disabled={state.phase === 'loading'}
+          onClick={() => setRetryToken((currentToken) => currentToken + 1)}
+        >
+          <RefreshCw aria-hidden="true" size={18} strokeWidth={2} />
+          Refresh
+        </button>
       </header>
 
       {state.phase === 'error' ? (
@@ -202,30 +338,81 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
       ) : null}
 
       {route.kind === 'services' ? (
-        <div className="qdn-explorer__list" role="list">
-          {SUPPORTED_SERVICES.map((service) => (
-            <button
-              className="qdn-explorer__row"
-              key={service}
-              type="button"
-              role="listitem"
-              onClick={() =>
-                onNavigate({
-                  kind: 'service',
-                  service,
-                  displayUrl: `qdn://${service}`,
-                })
-              }
-            >
-              <Folder aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
-              <span className="qdn-explorer__row-main">
-                <span className="qdn-explorer__row-title">{service}</span>
-                <span className="qdn-explorer__row-subtitle">Browse published {service} names</span>
-              </span>
-              <span className="qdn-explorer__row-meta">Service</span>
-            </button>
-          ))}
-        </div>
+        <>
+          {state.phase === 'loading' && serviceRows.length === 0 ? (
+            <p className="qdn-explorer__message">Loading published services</p>
+          ) : null}
+          {state.phase !== 'loading' && serviceRows.length === 0 && state.phase !== 'error' ? (
+            <p className="qdn-explorer__message">No public QDN resources found.</p>
+          ) : null}
+          {serviceRows.length > 0 ? (
+            <div className="qdn-explorer__list" role="list">
+              {serviceRows.map((row) => (
+                <button
+                  className="qdn-explorer__row"
+                  key={row.service}
+                  type="button"
+                  role="listitem"
+                  onClick={() =>
+                    onNavigate({
+                      kind: 'service',
+                      service: row.service,
+                      displayUrl: `qdn://${row.service}`,
+                    })
+                  }
+                >
+                  <Folder aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
+                  <span className="qdn-explorer__row-main">
+                    <span className="qdn-explorer__row-title">{row.service}</span>
+                    <span className="qdn-explorer__row-subtitle">Browse published {row.service} names</span>
+                  </span>
+                  <span className="qdn-explorer__row-meta">Service</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {route.kind === 'name-services' ? (
+        <>
+          {state.phase === 'loading' && serviceRows.length === 0 ? (
+            <p className="qdn-explorer__message">Loading published services for this name</p>
+          ) : null}
+          {state.phase !== 'loading' && serviceRows.length === 0 && state.phase !== 'error' ? (
+            <p className="qdn-explorer__message">No public QDN resources found for this name.</p>
+          ) : null}
+          {serviceRows.length > 0 ? (
+            <div className="qdn-explorer__list" role="list">
+              {serviceRows.map((row) => (
+                <button
+                  className="qdn-explorer__row"
+                  key={row.service}
+                  type="button"
+                  role="listitem"
+                  onClick={() =>
+                    onNavigate({
+                      kind: 'name',
+                      service: row.service,
+                      name: route.name,
+                      displayUrl: `qdn://${row.service}/${encodeURIComponent(route.name)}`,
+                    })
+                  }
+                >
+                  <Folder aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
+                  <span className="qdn-explorer__row-main">
+                    <span className="qdn-explorer__row-title">{row.service}</span>
+                    <span className="qdn-explorer__row-subtitle">
+                      {row.count.toLocaleString()} {row.count === 1 ? 'resource' : 'resources'} published by{' '}
+                      {route.name}
+                    </span>
+                  </span>
+                  <span className="qdn-explorer__row-meta">{formatExplorerStatus(row.status)}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       {route.kind === 'service' ? (
@@ -260,7 +447,7 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
                       {row.count.toLocaleString()} {row.count === 1 ? 'resource' : 'resources'}
                     </span>
                   </span>
-                  <span className="qdn-explorer__row-meta">{formatQdnStatus(row.status)}</span>
+                  <span className="qdn-explorer__row-meta">{formatExplorerStatus(row.status)}</span>
                 </button>
               ))}
             </div>
@@ -285,28 +472,52 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
                     sensitivity: 'base',
                   }),
                 )
-                .map((resource) => (
-                  <button
-                    className="qdn-explorer__row"
-                    key={`${resource.service}:${resource.name}:${getQdnItemIdentifier(resource)}`}
-                    type="button"
-                    role="listitem"
-                    onClick={() => onNavigate(buildQdnRouteFromListItem(resource))}
-                  >
-                    <FileText aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
-                    <span className="qdn-explorer__row-main">
-                      <span className="qdn-explorer__row-title">{getQdnItemIdentifier(resource)}</span>
-                      <span className="qdn-explorer__row-subtitle">
-                        {resource.metadata?.title || resource.metadata?.description || 'Published QDN resource'}
+                .map((resource) => {
+                  const canOpenResource = isQdnRenderableService(resource.service);
+                  const isImageResource = getQdnViewerKind(resource.service) === 'image';
+                  const rowContent = (
+                    <>
+                      {isImageResource ? (
+                        <QdnImageResourcePreview resource={resource} />
+                      ) : (
+                        <FileText aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
+                      )}
+                      <span className="qdn-explorer__row-main">
+                        <span className="qdn-explorer__row-title">{getQdnItemIdentifier(resource)}</span>
+                        <span className="qdn-explorer__row-subtitle">
+                          {resource.metadata?.title || resource.metadata?.description || 'Published QDN resource'}
+                        </span>
                       </span>
-                    </span>
-                    <span className="qdn-explorer__row-meta">
-                      {formatQdnStatus(resource.status)}
-                      {resource.size ? `, ${resource.size.toLocaleString()} bytes` : ''}
-                      {resource.created ? `, ${formatDate(resource.created)}` : ''}
-                    </span>
-                  </button>
-                ))}
+                      <span className="qdn-explorer__row-meta">{formatResourceMeta(resource)}</span>
+                    </>
+                  );
+
+                  if (!canOpenResource) {
+                    return (
+                      <div
+                        className={`qdn-explorer__row qdn-explorer__row--static${
+                          isImageResource ? ' qdn-explorer__row--preview' : ''
+                        }`}
+                        key={`${resource.service}:${resource.name}:${getQdnItemIdentifier(resource)}`}
+                        role="listitem"
+                      >
+                        {rowContent}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <button
+                      className={`qdn-explorer__row${isImageResource ? ' qdn-explorer__row--preview' : ''}`}
+                      key={`${resource.service}:${resource.name}:${getQdnItemIdentifier(resource)}`}
+                      type="button"
+                      role="listitem"
+                      onClick={() => onNavigate(buildQdnRouteFromListItem(resource))}
+                    >
+                      {rowContent}
+                    </button>
+                  );
+                })}
             </div>
           ) : null}
         </>
