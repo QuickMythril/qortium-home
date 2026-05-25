@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('qortiumHome', {
   accounts: {
     list: () => ipcRenderer.invoke('accounts:list'),
     loadWallet: () => ipcRenderer.invoke('accounts:loadWallet'),
+    createWallet: (password: string) => ipcRenderer.invoke('accounts:createWallet', password),
     setActiveAccount: (accountId: string) =>
       ipcRenderer.invoke('accounts:setActiveAccount', accountId),
     unlockWallet: (accountId: string, password: string) =>

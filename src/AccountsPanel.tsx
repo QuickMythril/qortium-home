@@ -22,6 +22,11 @@ export function AccountsPanel() {
   const [accountsState, setAccountsState] = useState<QortiumAccountsState>(EMPTY_ACCOUNTS_STATE);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [isLoadingWallet, setIsLoadingWallet] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [newWalletPassword, setNewWalletPassword] = useState('');
+  const [newWalletPasswordConfirm, setNewWalletPasswordConfirm] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [isCreatingWallet, setIsCreatingWallet] = useState(false);
   const [unlockingAccountId, setUnlockingAccountId] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [accountError, setAccountError] = useState('');
@@ -63,6 +68,66 @@ export function AccountsPanel() {
     [accountsState.accounts, unlockingAccountId],
   );
   const hasSavedAccounts = accountsState.accounts.length > 0;
+
+  function openCreateDialog() {
+    setAccountError('');
+    setCreateError('');
+    setNewWalletPassword('');
+    setNewWalletPasswordConfirm('');
+    setIsCreateDialogOpen(true);
+  }
+
+  function closeCreateDialog() {
+    if (isCreatingWallet) {
+      return;
+    }
+
+    setIsCreateDialogOpen(false);
+    setCreateError('');
+    setNewWalletPassword('');
+    setNewWalletPasswordConfirm('');
+  }
+
+  async function handleCreateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreateError('');
+
+    if (!newWalletPassword) {
+      setCreateError('Enter the wallet password.');
+      return;
+    }
+
+    if (!newWalletPasswordConfirm) {
+      setCreateError('Confirm the wallet password.');
+      return;
+    }
+
+    if (newWalletPassword !== newWalletPasswordConfirm) {
+      setCreateError('Wallet passwords do not match.');
+      return;
+    }
+
+    setIsCreatingWallet(true);
+
+    try {
+      const nextAccountsState = await window.qortiumHome.accounts.createWallet(newWalletPassword);
+
+      if (!nextAccountsState.canceled) {
+        setAccountsState({
+          accounts: nextAccountsState.accounts,
+          activeAccountId: nextAccountsState.activeAccountId,
+        });
+      }
+
+      setIsCreateDialogOpen(false);
+      setNewWalletPassword('');
+      setNewWalletPasswordConfirm('');
+    } catch (error) {
+      setCreateError(formatError(error));
+    } finally {
+      setIsCreatingWallet(false);
+    }
+  }
 
   async function handleLoadWallet() {
     setAccountError('');
@@ -144,8 +209,13 @@ export function AccountsPanel() {
   return (
     <section className="accounts-panel" aria-label="Accounts">
       <div className="accounts-panel__actions" aria-label="Account actions">
-        <button className="button" type="button" disabled>
-          New
+        <button
+          className="button"
+          type="button"
+          disabled={isLoadingAccounts || isCreatingWallet}
+          onClick={openCreateDialog}
+        >
+          {isCreatingWallet ? 'Creating' : 'New'}
         </button>
         <button
           className="button"
@@ -188,6 +258,56 @@ export function AccountsPanel() {
       ) : null}
 
       {accountError ? <p className="accounts-panel__message accounts-panel__message--error">{accountError}</p> : null}
+
+      {isCreateDialogOpen ? (
+        <div className="modal-backdrop" onMouseDown={closeCreateDialog}>
+          <form
+            aria-label="Create account"
+            aria-modal="true"
+            className="unlock-dialog"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={handleCreateSubmit}
+          >
+            <h2 className="unlock-dialog__title">New Account</h2>
+            <label className="field">
+              <span className="field__label">Password</span>
+              <input
+                autoFocus
+                className="field__input"
+                type="password"
+                value={newWalletPassword}
+                onChange={(event) => setNewWalletPassword(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Confirm password</span>
+              <input
+                className="field__input"
+                type="password"
+                value={newWalletPasswordConfirm}
+                onChange={(event) => setNewWalletPasswordConfirm(event.target.value)}
+              />
+            </label>
+            {createError ? (
+              <p className="accounts-panel__message accounts-panel__message--error">{createError}</p>
+            ) : null}
+            <div className="unlock-dialog__actions">
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={isCreatingWallet}
+                onClick={closeCreateDialog}
+              >
+                Cancel
+              </button>
+              <button className="button" type="submit" disabled={isCreatingWallet}>
+                {isCreatingWallet ? 'Creating' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {unlockingAccount ? (
         <div className="modal-backdrop" onMouseDown={closeUnlockDialog}>

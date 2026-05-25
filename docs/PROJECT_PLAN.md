@@ -105,6 +105,10 @@ For the initial implementation, it is acceptable to keep the UI simple:
 - Keep all imported wallets locked by default when the app starts.
 - Unlock a wallet only after password verification against the Hub-compatible encrypted wallet data.
 - Keep decrypted seed material in memory for the current application session only, never in persistent storage.
+- Create new wallets from a secure random seed in the initial New flow.
+- Require saving the encrypted wallet backup file before a newly created account is added to Home.
+- Start newly created wallets unlocked for the current application session.
+- Defer seed phrase display, seed phrase import, and seed phrase backup until a later wallet-management pass.
 - Derive and expose additional addresses from the same wallet after the basic wallet load/unlock flow works.
 - Add richer address discovery, labeling, and per-tab switching after the scaffold is testable.
 

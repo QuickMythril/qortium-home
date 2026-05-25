@@ -5,9 +5,11 @@ import {
   ipcMain,
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
+  type SaveDialogOptions,
 } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 
 const requireFromElectron = createRequire(import.meta.url);
@@ -15,6 +17,12 @@ const asmCrypto = requireFromElectron('asmcrypto.js') as {
   AES_CBC: {
     decrypt: (
       encryptedData: Uint8Array,
+      key: Uint8Array,
+      padding: boolean,
+      iv: Uint8Array,
+    ) => Uint8Array;
+    encrypt: (
+      data: Uint8Array,
       key: Uint8Array,
       padding: boolean,
       iv: Uint8Array,
@@ -39,10 +47,23 @@ const asmCrypto = requireFromElectron('asmcrypto.js') as {
 const bcrypt = requireFromElectron('bcryptjs') as {
   hash: (data: string, salt: string) => Promise<string>;
 };
+const nacl = requireFromElectron('tweetnacl') as {
+  sign: {
+    keyPair: {
+      fromSeed: (seed: Uint8Array) => {
+        publicKey: Uint8Array;
+        secretKey: Uint8Array;
+      };
+    };
+  };
+};
 
 const WALLETS_FILE = 'wallets.json';
 const WALLET_STORE_VERSION = 1;
+const QORTAL_WALLET_VERSION = 2;
 const KDF_THREAD_COUNT = 16;
+const WALLET_SEED_BYTES = 64;
+const QORTAL_ADDRESS_VERSION = 58;
 const STATIC_SALT = '4ghkVQExoneGqZqHTMMhhFfxXsVg2A75QeS1HCM5KAih';
 const STATIC_BCRYPT_SALT = '$2a$11$IxVE941tXVUD4cW0TNVm.O';
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -88,6 +109,10 @@ type AccountSummary = {
 type AccountsState = {
   accounts: AccountSummary[];
   activeAccountId: string | null;
+};
+
+type CreateWalletResult = AccountsState & {
+  canceled: boolean;
 };
 
 const unlockedWalletSeeds = new Map<string, Uint8Array>();
@@ -306,6 +331,29 @@ function sha512(data: Uint8Array) {
   return new asmCrypto.Sha512().process(data).finish().result;
 }
 
+function sha256(data: Uint8Array) {
+  return new Uint8Array(createHash('sha256').update(data).digest());
+}
+
+function ripemd160(data: Uint8Array) {
+  return new Uint8Array(createHash('ripemd160').update(data).digest());
+}
+
+function appendBuffer(first: Uint8Array | number[], second: Uint8Array | number[]) {
+  const firstBuffer = new Uint8Array(first);
+  const secondBuffer = new Uint8Array(second);
+  const nextBuffer = new Uint8Array(firstBuffer.byteLength + secondBuffer.byteLength);
+
+  nextBuffer.set(firstBuffer, 0);
+  nextBuffer.set(secondBuffer, firstBuffer.byteLength);
+
+  return nextBuffer;
+}
+
+function int32ToBytes(value: number) {
+  return [24, 16, 8, 0].map((shift) => (value >>> shift) & 0xff);
+}
+
 async function computeKdfPart(password: string, nonce: number) {
   const hash = sha512(stringToUtf8Array(`${STATIC_SALT}${password}${nonce}`));
   const hashBase64 = asmCrypto.bytes_to_base64(hash);
@@ -319,6 +367,50 @@ async function deriveWalletKey(password: string) {
   );
 
   return sha512(stringToUtf8Array(`${STATIC_SALT}${parts.reduce((combined, part) => combined + part)}`));
+}
+
+function deriveAddressSeed(seed: Uint8Array, nonce = 0) {
+  const nonceBytes = int32ToBytes(nonce);
+  const nonceSeed = appendBuffer(appendBuffer(nonceBytes, seed), nonceBytes);
+  const firstHash = sha512(nonceSeed);
+
+  return sha512(appendBuffer(firstHash, nonceSeed)).slice(0, 32);
+}
+
+function publicKeyToAddress(publicKey: Uint8Array) {
+  const publicKeyHash = ripemd160(sha256(publicKey));
+  const versionedHash = appendBuffer([QORTAL_ADDRESS_VERSION], publicKeyHash);
+  const checksum = sha256(sha256(versionedHash)).slice(0, 4);
+
+  return base58Encode(appendBuffer(versionedHash, checksum));
+}
+
+function deriveAddress(seed: Uint8Array) {
+  const addressSeed = deriveAddressSeed(seed);
+  const keyPair = nacl.sign.keyPair.fromSeed(addressSeed);
+
+  return publicKeyToAddress(keyPair.publicKey);
+}
+
+async function encryptWalletSeed(seed: Uint8Array, password: string): Promise<EncryptedWallet> {
+  const address = deriveAddress(seed);
+  const iv = new Uint8Array(randomBytes(16));
+  const salt = new Uint8Array(randomBytes(32));
+  const key = await deriveWalletKey(password);
+  const encryptionKey = key.slice(0, 32);
+  const macKey = key.slice(32, 63);
+  const encryptedSeed = new Uint8Array(asmCrypto.AES_CBC.encrypt(seed, encryptionKey, false, iv));
+  const mac = new asmCrypto.HmacSha512(macKey).process(encryptedSeed).finish().result;
+
+  return {
+    address0: address,
+    encryptedSeed: base58Encode(encryptedSeed),
+    salt: base58Encode(salt),
+    iv: base58Encode(iv),
+    version: QORTAL_WALLET_VERSION,
+    mac: base58Encode(mac),
+    kdfThreads: KDF_THREAD_COUNT,
+  };
 }
 
 async function decryptWalletSeed(password: string, wallet: EncryptedWallet) {
@@ -371,6 +463,18 @@ function getWalletLabel(sourceFilename: string, wallet: EncryptedWallet) {
   return path.parse(sourceFilename).name || wallet.address0;
 }
 
+function upsertWallet(store: WalletStore, wallet: StoredWallet) {
+  const existingWalletIndex = store.wallets.findIndex((storedWallet) => storedWallet.id === wallet.id);
+
+  if (existingWalletIndex >= 0) {
+    store.wallets[existingWalletIndex] = wallet;
+  } else {
+    store.wallets.push(wallet);
+  }
+
+  store.activeAccountId = wallet.id;
+}
+
 async function loadWallet(event: IpcMainInvokeEvent) {
   const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const dialogOptions: OpenDialogOptions = {
@@ -410,14 +514,63 @@ async function loadWallet(event: IpcMainInvokeEvent) {
     updatedAt: now,
   };
 
-  if (existingWalletIndex >= 0) {
-    store.wallets[existingWalletIndex] = nextWallet;
-  } else {
-    store.wallets.push(nextWallet);
+  unlockedWalletSeeds.delete(id);
+  upsertWallet(store, nextWallet);
+  writeWalletStore(store);
+
+  return {
+    canceled: false,
+    ...toAccountsState(store),
+  };
+}
+
+async function createWallet(event: IpcMainInvokeEvent, password: string): Promise<CreateWalletResult> {
+  if (!password) {
+    throw new Error('Enter the wallet password.');
   }
 
-  unlockedWalletSeeds.delete(id);
-  store.activeAccountId = id;
+  const seed = new Uint8Array(randomBytes(WALLET_SEED_BYTES));
+  const encryptedWallet = await encryptWalletSeed(seed, password);
+  const suggestedFilename = `qortium_backup_${encryptedWallet.address0}.json`;
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const dialogOptions: SaveDialogOptions = {
+    title: 'Save Wallet Backup',
+    defaultPath: suggestedFilename,
+    filters: [
+      { name: 'Wallet JSON', extensions: ['json'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  };
+  const result = parentWindow
+    ? await dialog.showSaveDialog(parentWindow, dialogOptions)
+    : await dialog.showSaveDialog(dialogOptions);
+  const store = readWalletStore();
+
+  if (result.canceled || !result.filePath) {
+    return {
+      canceled: true,
+      ...toAccountsState(store),
+    };
+  }
+
+  writeFileSync(result.filePath, `${JSON.stringify(encryptedWallet, null, 2)}\n`, 'utf8');
+
+  const id = getWalletId(encryptedWallet);
+  const sourceFilename = path.basename(result.filePath);
+  const existingWallet = store.wallets.find((wallet) => wallet.id === id);
+  const now = new Date().toISOString();
+  const nextWallet: StoredWallet = {
+    id,
+    label: existingWallet?.label ?? getWalletLabel(sourceFilename, encryptedWallet),
+    address: encryptedWallet.address0,
+    sourceFilename,
+    encryptedWallet,
+    createdAt: existingWallet?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  upsertWallet(store, nextWallet);
+  unlockedWalletSeeds.set(id, seed);
   writeWalletStore(store);
 
   return {
@@ -469,6 +622,7 @@ function lockWallet(accountId: string) {
 export function registerAccountIpcHandlers() {
   ipcMain.handle('accounts:list', () => toAccountsState());
   ipcMain.handle('accounts:loadWallet', (event) => loadWallet(event));
+  ipcMain.handle('accounts:createWallet', (event, password: string) => createWallet(event, password));
   ipcMain.handle('accounts:setActiveAccount', (_event, accountId: string) => setActiveAccount(accountId));
   ipcMain.handle('accounts:unlockWallet', (_event, accountId: string, password: string) =>
     unlockWallet(accountId, password),
