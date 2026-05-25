@@ -507,6 +507,20 @@ function assertValidWalletName(name: string, store: WalletStore, exceptWalletId?
   return nextName;
 }
 
+function sanitizeFilenamePart(value: string) {
+  const safeValue = value.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
+
+  return safeValue || 'wallet';
+}
+
+function ensureJsonFilePath(filePath: string) {
+  if (path.extname(filePath).toLowerCase() === '.json') {
+    return filePath;
+  }
+
+  return `${filePath}.json`;
+}
+
 function upsertWallet(store: WalletStore, wallet: StoredWallet) {
   const existingWalletIndex = store.wallets.findIndex((storedWallet) => storedWallet.id === wallet.id);
 
@@ -605,15 +619,11 @@ async function createWallet(event: IpcMainInvokeEvent, name: string, password: s
 
   const seed = new Uint8Array(randomBytes(WALLET_SEED_BYTES));
   const encryptedWallet = await encryptWalletSeed(seed, password);
-  const suggestedFilename = `qortium_backup_${encryptedWallet.address0}.json`;
+  const suggestedFilename = `${sanitizeFilenamePart(initialWalletName)}_${encryptedWallet.address0}.json`;
   const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const dialogOptions: SaveDialogOptions = {
     title: 'Save Wallet Backup',
     defaultPath: suggestedFilename,
-    filters: [
-      { name: 'Wallet JSON', extensions: ['json'] },
-      { name: 'All Files', extensions: ['*'] },
-    ],
   };
   const result = parentWindow
     ? await dialog.showSaveDialog(parentWindow, dialogOptions)
@@ -626,10 +636,12 @@ async function createWallet(event: IpcMainInvokeEvent, name: string, password: s
     };
   }
 
-  writeFileSync(result.filePath, `${JSON.stringify(encryptedWallet, null, 2)}\n`, 'utf8');
+  const savedFilePath = ensureJsonFilePath(result.filePath);
+
+  writeFileSync(savedFilePath, `${JSON.stringify(encryptedWallet, null, 2)}\n`, 'utf8');
 
   const id = getWalletId(encryptedWallet);
-  const sourceFilename = path.basename(result.filePath);
+  const sourceFilename = path.basename(savedFilePath);
   const store = readWalletStore();
   const walletName = assertValidWalletName(initialWalletName, store, id);
   const existingWallet = store.wallets.find((wallet) => wallet.id === id);
