@@ -22,7 +22,6 @@ type NodeStatusState =
 type DisplayStatus = 'Checking' | 'Unavailable' | 'Syncing' | 'Minting' | 'Synced';
 
 type DetailRow = {
-  isTechnical?: boolean;
   label: string;
   value: string;
 };
@@ -125,7 +124,7 @@ export function NodeStatusButton() {
   const detailRows = useMemo<DetailRow[]>(() => {
     if (nodeStatus.state !== 'available') {
       return [
-        { label: 'Node', value: NODE_API_URL, isTechnical: true },
+        { label: 'Node', value: NODE_API_URL },
         { label: 'Status', value: displayStatus },
         { label: 'Chain peers', value: '-' },
         { label: 'Data peers', value: '-' },
@@ -135,7 +134,7 @@ export function NodeStatusButton() {
     }
 
     return [
-      { label: 'Node', value: NODE_API_URL, isTechnical: true },
+      { label: 'Node', value: NODE_API_URL },
       { label: 'Status', value: displayStatus },
       { label: 'Chain peers', value: nodeStatus.data.numberOfConnections.toLocaleString() },
       { label: 'Data peers', value: nodeStatus.data.numberOfDataConnections.toLocaleString() },
@@ -171,11 +170,7 @@ export function NodeStatusButton() {
         {detailRows.map((row) => (
           <div className="detail-list__row" key={row.label}>
             <dt className="detail-list__label">{row.label}</dt>
-            <dd
-              className={`detail-list__value${row.isTechnical ? ' detail-list__value--technical' : ''}`}
-            >
-              {row.value}
-            </dd>
+            <dd className="detail-list__value">{row.value}</dd>
           </div>
         ))}
       </dl>
