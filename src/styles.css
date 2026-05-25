@@ -203,7 +203,7 @@ h1 {
 
 .detail-list__row {
   display: grid;
-  grid-template-columns: max-content minmax(0, max-content);
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 18px;
   align-items: baseline;
 }

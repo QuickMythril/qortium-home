@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-25 - app: align detail list values
+
+Adjusted shared detail-list layout so value columns fill the remaining panel width and right-aligned values visually line up at the right edge instead of sitting in a shrink-wrapped column.
+
 ### 2026-05-25 - app: correct node detail text styling
 
 Changed the node status details so the node address uses the regular interface font instead of fixed-width text, while keeping the value column neatly right-aligned at normal window sizes and still responsive on narrow screens.
