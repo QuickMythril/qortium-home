@@ -18,4 +18,8 @@ contextBridge.exposeInMainWorld('qortiumHome', {
     removeWallet: (accountId: string, password?: string) =>
       ipcRenderer.invoke('accounts:removeWallet', accountId, password),
   },
+  qdn: {
+    authorizeResource: (request: { identifier?: string; name: string; service: string }) =>
+      ipcRenderer.invoke('qdn:authorizeResource', request),
+  },
 });

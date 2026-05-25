@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerAccountIpcHandlers } from './accounts.js';
+import { registerQdnIpcHandlers } from './qdn.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_WINDOW_WIDTH = 1100;
@@ -172,6 +173,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerAccountIpcHandlers();
+  registerQdnIpcHandlers();
   createWindow();
 
   app.on('activate', () => {

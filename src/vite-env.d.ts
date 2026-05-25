@@ -29,6 +29,17 @@ type QortiumCreateWalletResult = QortiumAccountsState & {
   canceled: boolean;
 };
 
+type QortiumQdnAuthorizeRequest = {
+  identifier?: string;
+  name: string;
+  service: 'APP' | 'WEBSITE';
+};
+
+type QortiumQdnAuthorizeResult = {
+  authorized: true;
+  nodeApiUrl: string;
+};
+
 interface Window {
   qortiumHome: {
     accounts: {
@@ -43,5 +54,10 @@ interface Window {
       removeWallet: (accountId: string, password?: string) => Promise<QortiumAccountsState>;
     };
     appName: string;
+    qdn: {
+      authorizeResource: (
+        request: QortiumQdnAuthorizeRequest,
+      ) => Promise<QortiumQdnAuthorizeResult>;
+    };
   };
 }
