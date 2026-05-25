@@ -179,12 +179,15 @@ h1 {
   border-radius: 999px;
 }
 
-.node-status__popover {
+.popover-panel {
   position: absolute;
-  top: 48px;
+  top: calc(100% + 8px);
   right: 0;
-  width: min(300px, calc(100vw - 40px));
+  width: max-content;
+  min-width: min(320px, calc(100vw - 40px));
+  max-width: calc(100vw - 40px);
   padding: 14px;
+  overflow-x: hidden;
   color: #f4f0e8;
   background: #192020;
   border: 1px solid #344141;
@@ -192,31 +195,59 @@ h1 {
   box-shadow: 0 18px 48px rgb(0 0 0 / 35%);
 }
 
-.node-status__details {
+.detail-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
 }
 
-.node-status__row {
+.detail-list__row {
   display: grid;
-  grid-template-columns: minmax(84px, auto) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: max-content minmax(0, max-content);
+  gap: 18px;
   align-items: baseline;
 }
 
-.node-status__row dt {
+.detail-list__label {
   color: #a9b6b6;
   font-size: var(--font-size-small);
   line-height: var(--line-height-small);
 }
 
-.node-status__row dd {
+.detail-list__value {
   min-width: 0;
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: #f4f0e8;
   font-size: var(--font-size-ui);
   line-height: var(--line-height-small);
   text-align: right;
+}
+
+.detail-list__value--technical {
+  font-family:
+    "Illinois Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono",
+    monospace;
+  white-space: nowrap;
+}
+
+@media (max-width: 420px) {
+  .popover-panel {
+    min-width: min(280px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+  }
+
+  .detail-list__row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .detail-list__value {
+    text-align: left;
+  }
+
+  .detail-list__value--technical {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
 }

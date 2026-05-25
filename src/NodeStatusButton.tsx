@@ -1,5 +1,6 @@
 import { Server, WifiOff } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Popover } from './components/Popover';
 
 const NODE_API_URL = 'http://127.0.0.1:62391';
 const STATUS_REFRESH_MS = 15_000;
@@ -19,6 +20,12 @@ type NodeStatusState =
   | { state: 'unavailable' };
 
 type DisplayStatus = 'Checking' | 'Unavailable' | 'Syncing' | 'Minting' | 'Synced';
+
+type DetailRow = {
+  isTechnical?: boolean;
+  label: string;
+  value: string;
+};
 
 function isNodeStatusResponse(value: unknown): value is NodeStatusResponse {
   if (!value || typeof value !== 'object') {
@@ -65,7 +72,6 @@ function formatPercent(syncPercent: number | null | undefined) {
 
 export function NodeStatusButton() {
   const [nodeStatus, setNodeStatus] = useState<NodeStatusState>({ state: 'loading' });
-  const [isOpen, setIsOpen] = useState(false);
   const popoverId = 'node-status-details';
 
   useEffect(() => {
@@ -115,77 +121,64 @@ export function NodeStatusButton() {
     };
   }, []);
 
-  useEffect(() => {
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    }
-
-    window.addEventListener('keydown', closeOnEscape);
-
-    return () => {
-      window.removeEventListener('keydown', closeOnEscape);
-    };
-  }, []);
-
   const displayStatus = getDisplayStatus(nodeStatus);
-  const detailRows = useMemo(() => {
+  const detailRows = useMemo<DetailRow[]>(() => {
     if (nodeStatus.state !== 'available') {
       return [
-        ['Node', NODE_API_URL],
-        ['Status', displayStatus],
-        ['Chain peers', '-'],
-        ['Data peers', '-'],
-        ['Height', '-'],
-        ['Sync', '-'],
+        { label: 'Node', value: NODE_API_URL, isTechnical: true },
+        { label: 'Status', value: displayStatus },
+        { label: 'Chain peers', value: '-' },
+        { label: 'Data peers', value: '-' },
+        { label: 'Height', value: '-' },
+        { label: 'Sync', value: '-' },
       ];
     }
 
     return [
-      ['Node', NODE_API_URL],
-      ['Status', displayStatus],
-      ['Chain peers', nodeStatus.data.numberOfConnections.toLocaleString()],
-      ['Data peers', nodeStatus.data.numberOfDataConnections.toLocaleString()],
-      ['Height', nodeStatus.data.height.toLocaleString()],
-      ['Sync', formatPercent(nodeStatus.data.syncPercent)],
+      { label: 'Node', value: NODE_API_URL, isTechnical: true },
+      { label: 'Status', value: displayStatus },
+      { label: 'Chain peers', value: nodeStatus.data.numberOfConnections.toLocaleString() },
+      { label: 'Data peers', value: nodeStatus.data.numberOfDataConnections.toLocaleString() },
+      { label: 'Height', value: nodeStatus.data.height.toLocaleString() },
+      { label: 'Sync', value: formatPercent(nodeStatus.data.syncPercent) },
     ];
   }, [displayStatus, nodeStatus]);
 
   const Icon = displayStatus === 'Unavailable' ? WifiOff : Server;
 
   return (
-    <div className="node-status">
-      <button
-        type="button"
-        className={`node-status__button node-status__button--${displayStatus.toLowerCase()}`}
-        aria-label={`Node status: ${displayStatus}`}
-        aria-controls={isOpen ? popoverId : undefined}
-        aria-expanded={isOpen}
-        aria-haspopup="dialog"
-        onClick={() => setIsOpen((current) => !current)}
-      >
-        <Icon aria-hidden="true" size={20} strokeWidth={2} />
-        <span className="node-status__dot" aria-hidden="true" />
-      </button>
-
-      {isOpen ? (
-        <section
-          className="node-status__popover"
-          id={popoverId}
-          role="dialog"
-          aria-label="Node status details"
+    <Popover
+      className="node-status"
+      contentClassName="node-status__popover"
+      contentId={popoverId}
+      contentLabel="Node status details"
+      renderTrigger={({ contentId, isOpen, toggle }) => (
+        <button
+          type="button"
+          className={`node-status__button node-status__button--${displayStatus.toLowerCase()}`}
+          aria-label={`Node status: ${displayStatus}`}
+          aria-controls={isOpen ? contentId : undefined}
+          aria-expanded={isOpen}
+          aria-haspopup="dialog"
+          onClick={toggle}
         >
-          <dl className="node-status__details">
-            {detailRows.map(([label, value]) => (
-              <div className="node-status__row" key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      ) : null}
-    </div>
+          <Icon aria-hidden="true" size={20} strokeWidth={2} />
+          <span className="node-status__dot" aria-hidden="true" />
+        </button>
+      )}
+    >
+      <dl className="detail-list">
+        {detailRows.map((row) => (
+          <div className="detail-list__row" key={row.label}>
+            <dt className="detail-list__label">{row.label}</dt>
+            <dd
+              className={`detail-list__value${row.isTechnical ? ' detail-list__value--technical' : ''}`}
+            >
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </Popover>
   );
 }
