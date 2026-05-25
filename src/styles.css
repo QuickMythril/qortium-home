@@ -55,11 +55,21 @@
 }
 
 :root {
+  --font-size-small: 14px;
+  --font-size-ui: 17px;
+  --font-size-heading: 24px;
+  --font-size-title: 34px;
+  --line-height-tight: 1.2;
+  --line-height-ui: 1.45;
+  --line-height-small: 1.35;
+
   color: #f4f0e8;
   background: #121515;
   font-family:
     "Lexend", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
+  font-size: var(--font-size-ui);
+  line-height: var(--line-height-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -74,6 +84,13 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 code,
@@ -100,8 +117,9 @@ samp {
 h1 {
   margin: 0;
   color: #f4f0e8;
-  font-size: 48px;
+  font-size: var(--font-size-title);
   font-weight: 650;
+  line-height: var(--line-height-tight);
   letter-spacing: 0;
 }
 
@@ -189,8 +207,8 @@ h1 {
 
 .node-status__row dt {
   color: #a9b6b6;
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
 }
 
 .node-status__row dd {
@@ -198,7 +216,7 @@ h1 {
   margin: 0;
   overflow-wrap: anywhere;
   color: #f4f0e8;
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: var(--font-size-ui);
+  line-height: var(--line-height-small);
   text-align: right;
 }
