@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-25 - app: fix wallet backup save dialog
+
+Changed the new-wallet backup save dialog to start from an absolute Documents or home path, populate the suggested wallet backup filename reliably, and restore a JSON wallet file type filter while keeping `.json` extension enforcement in code.
+
 ### 2026-05-25 - app: improve wallet backup filenames
 
 Changed new-wallet backup saves to suggest `{wallet name}_{address}.json`, remove the save dialog's verbose JSON file type filter, and still enforce a `.json` extension after the user chooses a path.

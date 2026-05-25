@@ -521,6 +521,22 @@ function ensureJsonFilePath(filePath: string) {
   return `${filePath}.json`;
 }
 
+function getAppPath(name: Parameters<typeof app.getPath>[0]) {
+  try {
+    return app.getPath(name);
+  } catch {
+    return '';
+  }
+}
+
+function getDefaultWalletBackupPath(filename: string) {
+  const documentsPath = getAppPath('documents');
+  const homePath = getAppPath('home');
+  const basePath = documentsPath && existsSync(documentsPath) ? documentsPath : homePath;
+
+  return path.join(basePath || process.cwd(), filename);
+}
+
 function upsertWallet(store: WalletStore, wallet: StoredWallet) {
   const existingWalletIndex = store.wallets.findIndex((storedWallet) => storedWallet.id === wallet.id);
 
@@ -623,7 +639,8 @@ async function createWallet(event: IpcMainInvokeEvent, name: string, password: s
   const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const dialogOptions: SaveDialogOptions = {
     title: 'Save Wallet Backup',
-    defaultPath: suggestedFilename,
+    defaultPath: getDefaultWalletBackupPath(suggestedFilename),
+    filters: [{ name: 'JSON wallet file', extensions: ['json'] }],
   };
   const result = parentWindow
     ? await dialog.showSaveDialog(parentWindow, dialogOptions)

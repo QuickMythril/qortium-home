@@ -110,6 +110,7 @@ For the initial implementation, it is acceptable to keep the UI simple:
 - Create new wallets from a secure random seed in the initial New flow.
 - Require saving the encrypted wallet backup file before a newly created account is added to Home.
 - Use `{wallet name}_{address}.json` as the default backup filename for newly created wallets.
+- Start the wallet backup save dialog from an absolute Documents or home path so native pickers populate the filename reliably.
 - Start newly created wallets unlocked for the current application session.
 - Defer seed phrase display, seed phrase import, and seed phrase backup until a later wallet-management pass.
 - Derive and expose additional addresses from the same wallet after the basic wallet load/unlock flow works.
