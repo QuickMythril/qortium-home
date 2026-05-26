@@ -216,6 +216,10 @@ function QdnImageResourcePreview({
     let isDisposed = false;
 
     async function loadPreview() {
+      if (route.kind !== 'resource') {
+        return;
+      }
+
       setState({
         phase: 'loading',
       });

@@ -65,13 +65,14 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - The selected node should persist across app restarts.
   - Unreachable custom node URLs may still be saved, with the UI showing the node as unavailable until it can connect.
 - Android should connect to an existing node only. It does not need to download, install, or run Qortium Core locally in the initial direction.
+- The first Android scaffold uses Capacitor, shares the React UI, and starts with node settings/status plus read-only QDN/API browsing while wallet file flows remain desktop-only.
 - Use `~/git/Qortal-Hub` only as a reference, not as the product to clone.
 - Target distributable builds:
   - Linux AppImage for x64.
   - Linux AppImage for arm64, wired as a separate electron-builder script.
   - macOS DMG, wired as separate x64, arm64, and universal electron-builder scripts.
   - Windows EXE.
-  - Android APK.
+  - Android debug APK through Capacitor, with signed APK/AAB release packaging still to be added.
 - Linux, Windows, and macOS desktop builds should use the Qortium Home app icon from tracked build resources.
 - Some target artifacts will need to be built or verified on their native systems, but the repo should be set up so each target can be tackled and tested one at a time.
 
@@ -83,7 +84,7 @@ The chosen starting stack is:
 - Desktop shell: Electron.
 - Desktop packaging: `electron-builder`.
 - Desktop embedded content: start with React-managed tabs and the current iframe/resource viewers; add Electron `WebContentsView` isolation later.
-- Android shell: Capacitor Android.
+- Android shell: Capacitor Android, starting with a fallback renderer bridge for node settings/status and read-only QDN/API browsing.
 - First packaging target: Linux x64 AppImage.
 
 This keeps the project aligned with the existing Qortal Hub and Qortal Mobile patterns without copying either application directly. It also gives the desktop app the process-control and embedded-browser primitives needed for future local core management, QDN app rendering, per-tab account context, and packaged releases.
@@ -159,6 +160,7 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Future downloading and setting up Qortium Core from GitHub releases and prereleases.
 - Future starting of local core through scripts bundled with the core.
 - Android connection to an existing configured node.
+- First-pass Android debug APK builds through Capacitor.
 - Cross-platform packaging setup that can grow toward Linux, macOS, Windows, and Android releases.
 
 ### Out Of Scope For The Initial Direction
@@ -169,8 +171,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - A full Qortium Core implementation inside the UI app. The UI should manage and launch the core rather than reimplement it.
 - Running Qortium Core locally inside the Android APK for the initial version.
 - Downloading, installing, unpacking, starting, or stopping Qortium Core in the first scaffold.
-- Full tabbed browsing in the first scaffold.
 - `qdnRequest` request handling in the first scaffold.
+- Android wallet file creation, wallet file loading, and QDN file downloads in the first Android scaffold.
 
 ## Open Questions
 

@@ -20,10 +20,16 @@
     "dist:mac:arm64": "npm run build && electron-builder --mac dmg --arm64 --publish never",
     "dist:mac:universal": "npm run build && electron-builder --mac dmg --universal --publish never",
     "dist:win:x64": "npm run build && electron-builder --win portable --x64 --publish never",
+    "android:sync": "npm run build:renderer && cap sync android",
+    "android:open": "npm run android:sync && cap open android",
+    "dist:android:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "qdn:bootstrap-test-data": "node scripts/bootstrap-qdn-test-data.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/preferences": "^8.0.1",
     "asmcrypto.js": "2.3.2",
     "bcryptjs": "2.4.3",
     "lucide-react": "^1.16.0",
@@ -32,6 +38,7 @@
     "tweetnacl": "1.0.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.3.4",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",

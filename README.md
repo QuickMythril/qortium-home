@@ -44,6 +44,7 @@ more broadly.
 - Show the active tab's selected wallet as an avatar or initial in the top bar.
 - Use in-session Back and Forward navigation history.
 - Build Linux x64 and arm64 AppImages, macOS DMGs, and a Windows x64 portable executable.
+- Build a first-pass Android debug APK with Capacitor.
 - Package Linux, Windows, and macOS build resources with the Qortium Home app icon.
 
 ## Planned Work
@@ -52,7 +53,7 @@ more broadly.
 - `qdnRequest` support with approval prompts for account access and signing.
 - Service-specific viewers for more QDN service types.
 - Qortium Core download, setup, and local start/status management.
-- Android APK packaging.
+- Signed Android APK/AAB release packaging and Android wallet file flows.
 - Code signing and release verification for production builds.
 
 ## Development Setup
@@ -125,6 +126,24 @@ Build a Windows x64 portable executable:
 npm run dist:win:x64
 ```
 
+Sync the web app into the Android project:
+
+```sh
+npm run android:sync
+```
+
+Open the Android project in Android Studio:
+
+```sh
+npm run android:open
+```
+
+Build a local Android debug APK:
+
+```sh
+npm run dist:android:debug
+```
+
 Release artifacts are written to `dist-release/`. Generated build output should
 not be committed to git.
 
@@ -134,6 +153,17 @@ installer. It is unsigned and may show Windows SmartScreen warnings.
 The current macOS DMG builds are unsigned and should be built on macOS. Local
 test builds may require opening from Finder's right-click menu or approving the
 app in macOS privacy and security settings.
+
+The current Android build is an unsigned/debug-oriented Capacitor scaffold. It
+requires a local Android SDK with Android Platform 36 and Build Tools 35
+installed, SDK licenses accepted, and `ANDROID_HOME` or `ANDROID_SDK_ROOT`
+pointing at the SDK. The debug APK output is generated under
+`android/app/build/outputs/apk/debug/`.
+
+Android currently connects to an existing node only. The Previewnet preset uses
+`http://10.0.2.2:24891` for emulator testing; physical devices should use a
+custom LAN or remote node URL. Android wallet file creation/loading and QDN file
+downloads are intentionally still desktop-only.
 
 ## QDN Preview Test Data
 
