@@ -53,7 +53,7 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - Eventually run scripts included with the core to start it.
   - Show node status, including whether the node is connected and whether it has peers.
 - Initial node connection options:
-  - Qortium Previewnet preset: `http://localhost:62391`.
+  - Qortium Previewnet preset: `http://localhost:24891`.
   - Custom node address entered by the user.
 - Android should connect to an existing node only. It does not need to download, install, or run Qortium Core locally in the initial direction.
 - Use `~/git/Qortal-Hub` only as a reference, not as the product to clone.
@@ -142,7 +142,7 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - QDN service browsing across common service types.
 - Direct Qortal API endpoint viewing.
 - Preinstalled or externally managed core connection support.
-- Qortium Previewnet preset for `http://localhost:62391`.
+- Qortium Previewnet preset for `http://localhost:24891`.
 - Custom node address configuration.
 - Displaying configured node status, connectivity, and peer status.
 - Future downloading and setting up Qortium Core from GitHub releases and prereleases.
@@ -221,7 +221,7 @@ Qortium Home should maintain a human-readable change log, following the pattern 
    - Address or endpoint bar.
    - Selected account context for the active page.
 5. Add node connectivity configuration:
-   - Qortium Previewnet preset at `http://localhost:62391`.
+   - Qortium Previewnet preset at `http://localhost:24891`.
    - Custom node address.
    - Basic node status.
 6. Add direct API endpoint viewer.

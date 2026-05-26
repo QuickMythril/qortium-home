@@ -2,7 +2,7 @@ import { Server, WifiOff } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Popover } from './components/Popover';
 
-const NODE_API_URL = 'http://127.0.0.1:62391';
+const NODE_API_URL = 'http://127.0.0.1:24891';
 const STATUS_REFRESH_MS = 15_000;
 
 type NodeStatusResponse = {

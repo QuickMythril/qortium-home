@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const NODE_API_URL = process.env.QORTIUM_HOME_NODE_API_URL ?? 'http://127.0.0.1:62391';
+const NODE_API_URL = process.env.QORTIUM_HOME_NODE_API_URL ?? 'http://127.0.0.1:24891';
 const PREVIEW_API_KEY_PATH = path.join(os.homedir(), 'git', 'qortium', 'preview', 'apikey.txt');
 const PUBLIC_QDN_SERVICES = new Set([
   'APP',

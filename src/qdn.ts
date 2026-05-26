@@ -1,4 +1,4 @@
-export const NODE_API_URL = 'http://127.0.0.1:62391';
+export const NODE_API_URL = 'http://127.0.0.1:24891';
 
 export const PUBLIC_QDN_SERVICES = [
   'APP',

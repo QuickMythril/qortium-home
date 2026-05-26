@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
-const DEFAULT_NODE_API_URL = 'http://127.0.0.1:62391';
+const DEFAULT_NODE_API_URL = 'http://127.0.0.1:24891';
 const DEFAULT_NAME = 'QortiumHomeTest';
 const APP_IDENTIFIER = 'home-test';
 const IMAGE_IDENTIFIER = 'home-image';
