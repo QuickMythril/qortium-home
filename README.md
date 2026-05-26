@@ -7,7 +7,7 @@ content from one simple interface.
 The current application is intentionally smaller than Qortal Hub. Qortal Hub is
 used as a compatibility and integration reference, but Qortium Home is focused
 on account management, QDN browsing, and a browser-like foundation that can grow
-into tabs and per-tab account contexts later.
+into account-aware tabs over time.
 
 ## Status
 
@@ -40,12 +40,12 @@ more broadly.
 - Browse read-only node API endpoints with paths such as `/admin/status`.
 - Browse all public services for one name with `qdn://*/name`.
 - Use session-only browser tabs with independent page history.
+- Choose a separate selected wallet for each tab before navigating.
 - Use in-session Back and Forward navigation history.
 - Build a Linux x64 AppImage and a Windows x64 portable executable.
 
 ## Planned Work
 
-- Per-tab account selection.
 - Additional derived addresses from the same wallet.
 - `qdnRequest` support with approval prompts for account access and signing.
 - Service-specific viewers for more QDN service types.

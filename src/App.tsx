@@ -13,6 +13,7 @@ type RouteHistoryState = {
 };
 
 type BrowserTab = {
+  accountId: string | null;
   history: RouteHistoryState;
   id: string;
 };
@@ -26,12 +27,38 @@ type TabDropPosition = 'after' | 'before';
 
 let nextTabId = 1;
 
-function createBrowserTab(): BrowserTab {
+const EMPTY_ACCOUNTS_STATE: QortiumAccountsState = {
+  accounts: [],
+  activeAccountId: null,
+};
+
+function accountExists(accountsState: QortiumAccountsState, accountId: string | null) {
+  return !!accountId && accountsState.accounts.some((account) => account.id === accountId);
+}
+
+function getDefaultAccountId(accountsState: QortiumAccountsState) {
+  if (accountExists(accountsState, accountsState.activeAccountId)) {
+    return accountsState.activeAccountId;
+  }
+
+  return accountsState.accounts[0]?.id ?? null;
+}
+
+function formatError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return 'Account action failed.';
+  }
+
+  return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+}
+
+function createBrowserTab(accountId: string | null = null): BrowserTab {
   const id = `tab-${nextTabId}`;
 
   nextTabId += 1;
 
   return {
+    accountId,
     id,
     history: {
       entries: [null],
@@ -54,6 +81,9 @@ function getTabLabel(tab: BrowserTab) {
 }
 
 export function App() {
+  const [accountsState, setAccountsState] = useState<QortiumAccountsState>(EMPTY_ACCOUNTS_STATE);
+  const [accountsError, setAccountsError] = useState('');
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [nodeSettings, setNodeSettings] = useState<QortiumNodeSettings | null>(null);
   const [nodeSettingsError, setNodeSettingsError] = useState('');
   const [tabState, setTabState] = useState<BrowserTabState>(createInitialTabState);
@@ -63,6 +93,40 @@ export function App() {
   const isViewerRoute = currentRoute !== null;
   const canGoBack = routeHistory.index > 0;
   const canGoForward = routeHistory.index < routeHistory.entries.length - 1;
+
+  function reconcileTabsWithAccounts(nextAccountsState: QortiumAccountsState) {
+    setTabState((currentTabState) => {
+      const defaultAccountId = getDefaultAccountId(nextAccountsState);
+      const tabs = currentTabState.tabs.map((tab) => {
+        if (accountExists(nextAccountsState, tab.accountId)) {
+          return tab;
+        }
+
+        const currentRoute = tab.history.entries[tab.history.index] ?? null;
+        const nextAccountId = tab.accountId && currentRoute ? null : defaultAccountId;
+
+        if (tab.accountId === nextAccountId) {
+          return tab;
+        }
+
+        return {
+          ...tab,
+          accountId: nextAccountId,
+        };
+      });
+
+      return {
+        ...currentTabState,
+        tabs,
+      };
+    });
+  }
+
+  function handleAccountsStateChange(nextAccountsState: QortiumAccountsState) {
+    setAccountsState(nextAccountsState);
+    setAccountsError('');
+    reconcileTabsWithAccounts(nextAccountsState);
+  }
 
   useEffect(() => {
     let isDisposed = false;
@@ -89,6 +153,32 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let isDisposed = false;
+
+    window.qortiumHome.accounts
+      .list()
+      .then((nextAccountsState) => {
+        if (!isDisposed) {
+          handleAccountsStateChange(nextAccountsState);
+        }
+      })
+      .catch((error) => {
+        if (!isDisposed) {
+          setAccountsError(formatError(error));
+        }
+      })
+      .finally(() => {
+        if (!isDisposed) {
+          setIsLoadingAccounts(false);
+        }
+      });
+
+    return () => {
+      isDisposed = true;
+    };
+  }, []);
+
   async function saveNodeSettings(request: QortiumNodeSettingsRequest) {
     const settings = await window.qortiumHome.node.saveSettings(request);
 
@@ -97,33 +187,57 @@ export function App() {
     return settings;
   }
 
-  function updateActiveTabHistory(updateHistory: (history: RouteHistoryState) => RouteHistoryState) {
+  function updateActiveTab(updateTab: (tab: BrowserTab) => BrowserTab) {
     setTabState((currentTabState) => ({
       ...currentTabState,
       tabs: currentTabState.tabs.map((tab) =>
-        tab.id === currentTabState.activeTabId
-          ? {
-              ...tab,
-              history: updateHistory(tab.history),
-            }
-          : tab,
+        tab.id === currentTabState.activeTabId ? updateTab(tab) : tab,
       ),
     }));
   }
 
-  function navigateToRoute(route: AppRoute) {
-    updateActiveTabHistory((currentHistory) => {
-      const currentEntry = currentHistory.entries[currentHistory.index] ?? null;
+  function updateActiveTabHistory(updateHistory: (history: RouteHistoryState) => RouteHistoryState) {
+    updateActiveTab((tab) => ({
+      ...tab,
+      history: updateHistory(tab.history),
+    }));
+  }
 
-      if (currentEntry?.displayUrl === route.displayUrl) {
-        return currentHistory;
+  function updateActiveTabAccount(accountId: string | null) {
+    updateActiveTab((tab) => {
+      if (tab.accountId === accountId) {
+        return tab;
       }
 
-      const entries = [...currentHistory.entries.slice(0, currentHistory.index + 1), route];
+      return {
+        ...tab,
+        accountId,
+      };
+    });
+  }
+
+  function navigateToRoute(route: AppRoute) {
+    const defaultAccountId = getDefaultAccountId(accountsState);
+
+    updateActiveTab((tab) => {
+      const currentEntry = tab.history.entries[tab.history.index] ?? null;
+      const accountId = accountExists(accountsState, tab.accountId) ? tab.accountId : defaultAccountId;
+      const history =
+        currentEntry?.displayUrl === route.displayUrl
+          ? tab.history
+          : {
+              entries: [...tab.history.entries.slice(0, tab.history.index + 1), route],
+              index: tab.history.index + 1,
+            };
+
+      if (history === tab.history && accountId === tab.accountId) {
+        return tab;
+      }
 
       return {
-        entries,
-        index: entries.length - 1,
+        ...tab,
+        accountId,
+        history,
       };
     });
   }
@@ -150,7 +264,7 @@ export function App() {
   }
 
   function addTab() {
-    const tab = createBrowserTab();
+    const tab = createBrowserTab(getDefaultAccountId(accountsState));
 
     setTabState((currentTabState) => ({
       tabs: [...currentTabState.tabs, tab],
@@ -174,7 +288,7 @@ export function App() {
   function closeTab(tabId: string) {
     setTabState((currentTabState) => {
       if (currentTabState.tabs.length <= 1) {
-        const tab = createBrowserTab();
+        const tab = createBrowserTab(getDefaultAccountId(accountsState));
 
         return {
           tabs: [tab],
@@ -284,7 +398,14 @@ export function App() {
         ) : (
           <div className="home-content">
             <h1>Qortium Home</h1>
-            <AccountsPanel />
+            <AccountsPanel
+              accountsError={accountsError}
+              accountsState={accountsState}
+              isLoadingAccounts={isLoadingAccounts}
+              selectedAccountId={activeTab.accountId}
+              onAccountsStateChange={handleAccountsStateChange}
+              onSelectedAccountChange={updateActiveTabAccount}
+            />
           </div>
         )}
       </section>

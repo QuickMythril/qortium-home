@@ -1,12 +1,16 @@
 import { Lock, Unlock, X } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
-
-const EMPTY_ACCOUNTS_STATE: QortiumAccountsState = {
-  accounts: [],
-  activeAccountId: null,
-};
+import { FormEvent, useMemo, useState } from 'react';
 
 type PendingLoadedWallet = Extract<QortiumSelectWalletResult, { canceled: false }>;
+
+type AccountsPanelProps = {
+  accountsError: string;
+  accountsState: QortiumAccountsState;
+  isLoadingAccounts: boolean;
+  selectedAccountId: string | null;
+  onAccountsStateChange: (accountsState: QortiumAccountsState) => void;
+  onSelectedAccountChange: (accountId: string | null) => void;
+};
 
 function formatError(error: unknown) {
   if (!(error instanceof Error)) {
@@ -51,9 +55,14 @@ function validateWalletName(
   return '';
 }
 
-export function AccountsPanel() {
-  const [accountsState, setAccountsState] = useState<QortiumAccountsState>(EMPTY_ACCOUNTS_STATE);
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+export function AccountsPanel({
+  accountsError,
+  accountsState,
+  isLoadingAccounts,
+  selectedAccountId,
+  onAccountsStateChange,
+  onSelectedAccountChange,
+}: AccountsPanelProps) {
   const [isLoadingWallet, setIsLoadingWallet] = useState(false);
   const [pendingLoadedWallet, setPendingLoadedWallet] = useState<PendingLoadedWallet | null>(null);
   const [loadWalletName, setLoadWalletName] = useState('');
@@ -75,35 +84,9 @@ export function AccountsPanel() {
   const [removeError, setRemoveError] = useState('');
   const [isRemovingAccount, setIsRemovingAccount] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    window.qortiumHome.accounts
-      .list()
-      .then((nextAccountsState) => {
-        if (isMounted) {
-          setAccountsState(nextAccountsState);
-        }
-      })
-      .catch((error) => {
-        if (isMounted) {
-          setAccountError(formatError(error));
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoadingAccounts(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const activeAccount = useMemo(
-    () => accountsState.accounts.find((account) => account.id === accountsState.activeAccountId),
-    [accountsState.accounts, accountsState.activeAccountId],
+    () => accountsState.accounts.find((account) => account.id === selectedAccountId),
+    [accountsState.accounts, selectedAccountId],
   );
   const unlockingAccount = useMemo(
     () => accountsState.accounts.find((account) => account.id === unlockingAccountId),
@@ -114,6 +97,7 @@ export function AccountsPanel() {
     [accountsState.accounts, removingAccountId],
   );
   const hasSavedAccounts = accountsState.accounts.length > 0;
+  const visibleAccountError = accountError || accountsError;
 
   function openCreateDialog() {
     setAccountError('');
@@ -171,10 +155,13 @@ export function AccountsPanel() {
       );
 
       if (!nextAccountsState.canceled) {
-        setAccountsState({
+        const savedAccountsState = {
           accounts: nextAccountsState.accounts,
           activeAccountId: nextAccountsState.activeAccountId,
-        });
+        };
+
+        onAccountsStateChange(savedAccountsState);
+        onSelectedAccountChange(savedAccountsState.activeAccountId);
       }
 
       setIsCreateDialogOpen(false);
@@ -255,7 +242,8 @@ export function AccountsPanel() {
         normalizeWalletName(loadWalletName),
       );
 
-      setAccountsState(nextAccountsState);
+      onAccountsStateChange(nextAccountsState);
+      onSelectedAccountChange(nextAccountsState.activeAccountId);
       setPendingLoadedWallet(null);
       setLoadWalletName('');
     } catch (error) {
@@ -269,7 +257,10 @@ export function AccountsPanel() {
     setAccountError('');
 
     try {
-      setAccountsState(await window.qortiumHome.accounts.setActiveAccount(accountId));
+      const nextAccountsState = await window.qortiumHome.accounts.setActiveAccount(accountId);
+
+      onAccountsStateChange(nextAccountsState);
+      onSelectedAccountChange(nextAccountsState.activeAccountId);
     } catch (error) {
       setAccountError(formatError(error));
     }
@@ -290,7 +281,7 @@ export function AccountsPanel() {
     }
 
     try {
-      setAccountsState(await window.qortiumHome.accounts.lockWallet(activeAccount.id));
+      onAccountsStateChange(await window.qortiumHome.accounts.lockWallet(activeAccount.id));
     } catch (error) {
       setAccountError(formatError(error));
     }
@@ -317,7 +308,7 @@ export function AccountsPanel() {
     setIsUnlocking(true);
 
     try {
-      setAccountsState(await window.qortiumHome.accounts.unlockWallet(unlockingAccount.id, password));
+      onAccountsStateChange(await window.qortiumHome.accounts.unlockWallet(unlockingAccount.id, password));
       setUnlockingAccountId(null);
       setPassword('');
       setUnlockError('');
@@ -365,12 +356,13 @@ export function AccountsPanel() {
     setIsRemovingAccount(true);
 
     try {
-      setAccountsState(
-        await window.qortiumHome.accounts.removeWallet(
-          removingAccount.id,
-          removingAccount.isUnlocked ? undefined : removePassword,
-        ),
+      const nextAccountsState = await window.qortiumHome.accounts.removeWallet(
+        removingAccount.id,
+        removingAccount.isUnlocked ? undefined : removePassword,
       );
+
+      onAccountsStateChange(nextAccountsState);
+      onSelectedAccountChange(nextAccountsState.activeAccountId);
       setRemovingAccountId(null);
       setRemovePassword('');
       setRemoveError('');
@@ -404,13 +396,13 @@ export function AccountsPanel() {
 
       {hasSavedAccounts ? (
         <div className="account-selector">
-          <label className="account-selector__label" htmlFor="active-wallet">
-            Active wallet
+          <label className="account-selector__label" htmlFor="selected-wallet">
+            Selected wallet
           </label>
           <div className="account-selector__control">
             <select
               className="account-selector__select"
-              id="active-wallet"
+              id="selected-wallet"
               value={activeAccount?.id ?? ''}
               onChange={(event) => handleActiveAccountChange(event.target.value)}
             >
@@ -451,7 +443,9 @@ export function AccountsPanel() {
         </div>
       ) : null}
 
-      {accountError ? <p className="accounts-panel__message accounts-panel__message--error">{accountError}</p> : null}
+      {visibleAccountError ? (
+        <p className="accounts-panel__message accounts-panel__message--error">{visibleAccountError}</p>
+      ) : null}
 
       {isCreateDialogOpen ? (
         <div className="modal-backdrop" onMouseDown={closeCreateDialog}>

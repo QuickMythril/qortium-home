@@ -31,8 +31,8 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - Support session-only browser tabs.
   - Each tab can load a different page, QDN resource, app, website, or API endpoint.
   - Each tab has independent Back and Forward navigation history.
-  - Future tabs should allow each tab to be associated with a selected account.
-  - Future tabs should allow different tabs to use different accounts at the same time.
+  - Each tab should be associated with its own selected account.
+  - Different tabs should be able to use different accounts at the same time.
   - Future tabs should ideally isolate rendered app/web content from each other, especially when they use different accounts.
   - Treat strict tab isolation as more important on desktop than Android when Electron `WebContentsView` support is added.
 - Primary QDN browsing features:
@@ -102,7 +102,7 @@ The internal account model should distinguish:
 - The public key for that derived address.
 - User metadata such as label, note, and whether the address is pinned or discovered.
 
-The active page should refer to a selected account context, not just a global wallet. When tab support is added, each tab account context should identify the loaded wallet and the derived address index or address. This will allow one tab to use one derived address while another tab uses a different address or a different wallet file.
+The active page should refer to a selected account context, not just a global wallet. Each tab account context should identify the loaded wallet and, later, the derived address index or address. This allows one tab to use one wallet or derived address while another tab uses a different wallet file or derived address.
 
 For the initial implementation, it is acceptable to keep the UI simple:
 
@@ -139,14 +139,14 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 ### In Scope
 
 - Wallet/account creation, saving, loading, and selection.
-- Active-page account selection, with per-tab account selection added later.
+- Per-tab account selection for the active page.
 - Future user approval prompts for QDN app requests that require account access, signing, or other non-read-only permissions.
 - Local wallet list management.
 - Qortal Hub-compatible wallet import and export.
 - Multiple loaded wallet files.
 - Multiple derived addresses per wallet.
 - Browser-style tab management for QDN pages, QDN apps/websites, and direct API endpoint views.
-- Future per-tab account context.
+- Future derived-address selection inside each tab account context.
 - QDN service browsing across common service types.
 - Dedicated QDN viewers for app, website, image, audio, video, text, and file-style resources.
 - Direct Qortal API endpoint viewing for read-only node API `GET` requests.
@@ -178,8 +178,7 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - How many derived addresses should Qortium Home show by default for each loaded wallet?
 - Should derived addresses be discovered by scanning chain activity, generated on demand, or both?
 - How should users label derived addresses separately from wallet files?
-- How should the active page's selected account be stored and restored?
-- When tab support is added, how should each tab's selected account be stored and restored?
+- Should tab account selections persist across restarts, or stay session-only with the current tabs?
 - Should account context be changeable while a QDN app or page is already loaded?
 - What exact permission prompts are needed when QDN apps request account access or signing capability?
 - Which `qdnRequest` actions are read-only and can be allowed without prompting?
@@ -237,7 +236,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 8. Package and test the first Linux x64 AppImage.
 9. Add first-pass tab support.
 10. Add per-tab account context.
-11. Add `qdnRequest` permission and signing support.
-12. Add Qortium Core release/prerelease download and setup flow.
-13. Add local core start/status controls.
-14. Expand packaging targets one at a time.
+11. Add visible account controls for already-loaded tabs if users need to change a tab's account after navigation.
+12. Add `qdnRequest` permission and signing support.
+13. Add Qortium Core release/prerelease download and setup flow.
+14. Add local core start/status controls.
+15. Expand packaging targets one at a time.
