@@ -1,6 +1,6 @@
 # Qortium Home Project Plan
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 ## Purpose
 
@@ -40,7 +40,8 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - Browse `WEBSITE` services.
   - Support additional QDN service types such as `IMAGE`, `AUDIO`, and other available services.
   - Load direct API endpoint URLs so users can inspect chain data inside the UI.
-  - Start by loading and displaying QDN content only.
+  - Support read-only direct node API endpoint viewing through the address bar.
+  - Start with read-only API `GET` requests; defer authenticated or write-style API requests until explicit permission prompts exist.
   - Add `qdnRequest`-style requests from QDN apps later, similar to Qortal Hub.
   - When `qdnRequest` support is added, prompt the user before approving requests that are not read-only, especially signing requests.
   - Future permission prompts should show the selected account/address that will be used.
@@ -140,7 +141,7 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Single active page/view for QDN pages, QDN apps/websites, and direct API endpoint views.
 - Future browser-style tab management.
 - QDN service browsing across common service types.
-- Direct Qortal API endpoint viewing.
+- Direct Qortal API endpoint viewing for read-only node API `GET` requests.
 - Preinstalled or externally managed core connection support.
 - Qortium Previewnet preset for `http://localhost:24891`.
 - Custom node address configuration.

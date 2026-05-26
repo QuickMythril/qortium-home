@@ -68,6 +68,11 @@ type QdnResourcesSearchRequest = {
   service?: unknown;
 };
 
+type NodeApiRequest = {
+  maxBytes?: unknown;
+  path?: unknown;
+};
+
 type QdnResourceRequest = {
   identifier?: string;
   name: string;
@@ -234,6 +239,22 @@ function getSuggestedFilename(request: QdnRawResourceRequest, resource: QdnResou
   return sanitizeFilename(`${resource.service}_${resource.name}_${resource.identifier ?? 'default'}`);
 }
 
+function getNodeApiPath(value: unknown) {
+  const apiPath = getString(value);
+
+  if (!apiPath.startsWith('/') || apiPath.startsWith('//')) {
+    throw new Error('Node API paths must start with /.');
+  }
+
+  if (/[\x00-\x1F]/.test(apiPath)) {
+    throw new Error('Node API path contains invalid control characters.');
+  }
+
+  const url = new URL(apiPath, NODE_API_URL);
+
+  return `${url.pathname}${url.search}`;
+}
+
 function getNodeUnavailableMessage() {
   return `Qortium node is unavailable at ${NODE_API_URL}.`;
 }
@@ -343,6 +364,48 @@ export function registerQdnIpcHandlers() {
 
   ipcMain.handle('qdn:listResources', async (_event, request: QdnResourcesSearchRequest) => {
     return fetchNodeJson(buildResourcesSearchPath(request));
+  });
+
+  ipcMain.handle('qdn:fetchNodeApi', async (_event, request: NodeApiRequest) => {
+    const apiPath = getNodeApiPath(request.path);
+    const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
+    const response = await fetchNode(apiPath);
+    const contentLength = getContentLength(response);
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (maxBytes > 0 && typeof contentLength === 'number' && contentLength > maxBytes) {
+      await response.body?.cancel();
+
+      return {
+        contentLength,
+        contentType,
+        status: response.status,
+        statusText: response.statusText,
+        tooLarge: true,
+      };
+    }
+
+    const body = await response.text();
+    const bodyLength = Buffer.byteLength(body, 'utf8');
+
+    if (maxBytes > 0 && bodyLength > maxBytes) {
+      return {
+        contentLength: bodyLength,
+        contentType,
+        status: response.status,
+        statusText: response.statusText,
+        tooLarge: true,
+      };
+    }
+
+    return {
+      body,
+      contentLength: contentLength ?? bodyLength,
+      contentType,
+      status: response.status,
+      statusText: response.statusText,
+      tooLarge: false,
+    };
   });
 
   ipcMain.handle('qdn:fetchResourceText', async (_event, request: QdnRawResourceRequest) => {

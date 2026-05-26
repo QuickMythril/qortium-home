@@ -68,6 +68,28 @@ type QortiumQdnTextResult =
       tooLarge: true;
     };
 
+type QortiumNodeApiRequest = {
+  maxBytes?: number;
+  path: string;
+};
+
+type QortiumNodeApiResult =
+  | {
+      body: string;
+      contentLength?: number;
+      contentType: string;
+      status: number;
+      statusText: string;
+      tooLarge: false;
+    }
+  | {
+      contentLength?: number;
+      contentType: string;
+      status: number;
+      statusText: string;
+      tooLarge: true;
+    };
+
 type QortiumQdnDownloadResult =
   | {
       canceled: true;
@@ -98,6 +120,9 @@ interface Window {
       listResources: (
         request: QortiumQdnResourcesSearchRequest,
       ) => Promise<unknown>;
+      fetchNodeApi: (
+        request: QortiumNodeApiRequest,
+      ) => Promise<QortiumNodeApiResult>;
       fetchResourceText: (
         request: QortiumQdnRawResourceRequest,
       ) => Promise<QortiumQdnTextResult>;

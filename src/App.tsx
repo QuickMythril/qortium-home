@@ -1,13 +1,14 @@
 import './styles.css';
 import { useState } from 'react';
 import { AccountsPanel } from './AccountsPanel';
+import { ApiViewer } from './ApiViewer';
 import { QdnExplorer } from './QdnExplorer';
 import { QdnViewer } from './QdnViewer';
 import { TopBar } from './TopBar';
-import type { QdnRoute } from './qdn';
+import type { AppRoute } from './routes';
 
 type RouteHistoryState = {
-  entries: (QdnRoute | null)[];
+  entries: (AppRoute | null)[];
   index: number;
 };
 
@@ -17,11 +18,11 @@ export function App() {
     index: 0,
   });
   const currentRoute = routeHistory.entries[routeHistory.index] ?? null;
-  const isQdnRoute = currentRoute !== null;
+  const isViewerRoute = currentRoute !== null;
   const canGoBack = routeHistory.index > 0;
   const canGoForward = routeHistory.index < routeHistory.entries.length - 1;
 
-  function navigateToRoute(route: QdnRoute) {
+  function navigateToRoute(route: AppRoute) {
     setRouteHistory((currentHistory) => {
       const currentEntry = currentHistory.entries[currentHistory.index] ?? null;
 
@@ -73,10 +74,12 @@ export function App() {
         onNavigate={navigateToRoute}
       />
       <section
-        className={`app-main${isQdnRoute ? ' app-main--viewer' : ''}`}
-        aria-label={isQdnRoute ? 'QDN page' : 'Qortium Home'}
+        className={`app-main${isViewerRoute ? ' app-main--viewer' : ''}`}
+        aria-label={isViewerRoute ? 'Browser page' : 'Qortium Home'}
       >
-        {currentRoute?.kind === 'resource' ? (
+        {currentRoute?.kind === 'node-api' ? (
+          <ApiViewer route={currentRoute} />
+        ) : currentRoute?.kind === 'resource' ? (
           <QdnViewer resource={currentRoute.resource} />
         ) : currentRoute ? (
           <QdnExplorer route={currentRoute} onNavigate={navigateToRoute} />

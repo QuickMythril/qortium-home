@@ -3,36 +3,36 @@ import type { FormEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { NodeStatusButton } from './NodeStatusButton';
 import { Popover } from './components/Popover';
-import type { QdnRoute } from './qdn';
-import { parseQdnUrl } from './qdn';
+import type { AppRoute } from './routes';
+import { parseAppAddress } from './routes';
 
 type TopBarProps = {
   canGoBack: boolean;
   canGoForward: boolean;
-  currentRoute: QdnRoute | null;
-  historyEntries: (QdnRoute | null)[];
+  currentRoute: AppRoute | null;
+  historyEntries: (AppRoute | null)[];
   historyIndex: number;
   onGoBack: () => void;
   onGoForward: () => void;
   onGoToHistoryIndex: (index: number) => void;
-  onNavigate: (route: QdnRoute) => void;
+  onNavigate: (route: AppRoute) => void;
 };
 
 type HistoryButtonProps = {
   canNavigate: boolean;
   direction: 'back' | 'forward';
-  historyEntries: (QdnRoute | null)[];
+  historyEntries: (AppRoute | null)[];
   historyIndex: number;
   onJump: (index: number) => void;
   onStep: () => void;
 };
 
 type HistoryMenuItem = {
-  entry: QdnRoute | null;
+  entry: AppRoute | null;
   index: number;
 };
 
-function formatHistoryEntry(entry: QdnRoute | null) {
+function formatHistoryEntry(entry: AppRoute | null) {
   return entry?.displayUrl ?? 'Qortium Home';
 }
 
@@ -147,7 +147,7 @@ export function TopBar({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const parsedUrl = parseQdnUrl(addressValue);
+    const parsedUrl = parseAppAddress(addressValue);
 
     if (!parsedUrl.success) {
       setAddressError(parsedUrl.message);
@@ -177,16 +177,16 @@ export function TopBar({
           onJump={onGoToHistoryIndex}
           onStep={onGoForward}
         />
-        <label className="sr-only" htmlFor="qdn-address">
-          QDN address
+        <label className="sr-only" htmlFor="browser-address">
+          Address
         </label>
         <div className="top-bar__address-control">
           <Globe2 aria-hidden="true" className="top-bar__address-icon" size={20} strokeWidth={2} />
           <input
             autoComplete="off"
             className="top-bar__address-input"
-            id="qdn-address"
-            placeholder="qdn://APP or qdn://*/name"
+            id="browser-address"
+            placeholder="qdn://APP, qdn://*/name, or /admin/status"
             spellCheck={false}
             type="text"
             value={addressValue}
@@ -196,9 +196,9 @@ export function TopBar({
             }}
           />
         </div>
-        <button className="icon-button top-bar__go-button" title="Load QDN address" type="submit">
+        <button className="icon-button top-bar__go-button" title="Load address" type="submit">
           <ArrowRight aria-hidden="true" size={20} strokeWidth={2} />
-          <span className="sr-only">Load QDN address</span>
+          <span className="sr-only">Load address</span>
         </button>
         {addressError ? <p className="top-bar__error">{addressError}</p> : null}
       </form>
