@@ -28,13 +28,13 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - Support switching between different derived addresses from the same wallet.
   - Start with a simple account-management flow, then expand the address and wallet switching UI as the core model stabilizes.
 - The application should be structured like a simple web browser:
-  - Start with one active page/view at a time.
-  - Add multiple tabs later.
-  - Future tabs should allow each tab to load a different page, QDN resource, app, website, or API endpoint.
+  - Support session-only browser tabs.
+  - Each tab can load a different page, QDN resource, app, website, or API endpoint.
+  - Each tab has independent Back and Forward navigation history.
   - Future tabs should allow each tab to be associated with a selected account.
   - Future tabs should allow different tabs to use different accounts at the same time.
-  - Future tabs should ideally isolate tabs from each other, especially when they use different accounts.
-  - Treat strict tab isolation as more important on desktop than Android when tab support is added.
+  - Future tabs should ideally isolate rendered app/web content from each other, especially when they use different accounts.
+  - Treat strict tab isolation as more important on desktop than Android when Electron `WebContentsView` support is added.
 - Primary QDN browsing features:
   - Browse `APP` services.
   - Browse `WEBSITE` services.
@@ -80,7 +80,7 @@ The chosen starting stack is:
 - Shared UI: Vite, React, TypeScript.
 - Desktop shell: Electron.
 - Desktop packaging: `electron-builder`.
-- Desktop embedded content: start with a single active web content view; add Electron `WebContentsView` tab support later.
+- Desktop embedded content: start with React-managed tabs and the current iframe/resource viewers; add Electron `WebContentsView` isolation later.
 - Android shell: Capacitor Android.
 - First packaging target: Linux x64 AppImage.
 
@@ -145,8 +145,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Qortal Hub-compatible wallet import and export.
 - Multiple loaded wallet files.
 - Multiple derived addresses per wallet.
-- Single active page/view for QDN pages, QDN apps/websites, and direct API endpoint views.
-- Future browser-style tab management.
+- Browser-style tab management for QDN pages, QDN apps/websites, and direct API endpoint views.
+- Future per-tab account context.
 - QDN service browsing across common service types.
 - Dedicated QDN viewers for app, website, image, audio, video, text, and file-style resources.
 - Direct Qortal API endpoint viewing for read-only node API `GET` requests.
@@ -235,8 +235,9 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 6. Add direct API endpoint viewer.
 7. Add basic QDN browser by service type.
 8. Package and test the first Linux x64 AppImage.
-9. Add tab support.
-10. Add `qdnRequest` permission and signing support.
-11. Add Qortium Core release/prerelease download and setup flow.
-12. Add local core start/status controls.
-13. Expand packaging targets one at a time.
+9. Add first-pass tab support.
+10. Add per-tab account context.
+11. Add `qdnRequest` permission and signing support.
+12. Add Qortium Core release/prerelease download and setup flow.
+13. Add local core start/status controls.
+14. Expand packaging targets one at a time.

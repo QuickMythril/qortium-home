@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronLeft, ChevronRight, Globe2 } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Globe2, Plus, X } from 'lucide-react';
 import type { FormEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { NodeStatusButton } from './NodeStatusButton';
@@ -7,17 +7,27 @@ import type { AppRoute } from './routes';
 import { parseAppAddress } from './routes';
 
 type TopBarProps = {
+  activeTabId: string;
   canGoBack: boolean;
   canGoForward: boolean;
   currentRoute: AppRoute | null;
   historyEntries: (AppRoute | null)[];
   historyIndex: number;
   nodeSettings: QortiumNodeSettings;
+  tabs: BrowserTabSummary[];
+  onAddTab: () => void;
+  onCloseTab: (tabId: string) => void;
   onGoBack: () => void;
   onGoForward: () => void;
   onGoToHistoryIndex: (index: number) => void;
   onNavigate: (route: AppRoute) => void;
   onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
+  onSelectTab: (tabId: string) => void;
+};
+
+type BrowserTabSummary = {
+  id: string;
+  label: string;
 };
 
 type HistoryButtonProps = {
@@ -128,25 +138,90 @@ function HistoryButton({
   );
 }
 
+function BrowserTabs({
+  activeTabId,
+  onAddTab,
+  onCloseTab,
+  onSelectTab,
+  tabs,
+}: {
+  activeTabId: string;
+  onAddTab: () => void;
+  onCloseTab: (tabId: string) => void;
+  onSelectTab: (tabId: string) => void;
+  tabs: BrowserTabSummary[];
+}) {
+  const canCloseTabs = tabs.length > 1;
+
+  return (
+    <div className="top-bar__tabs">
+      <div className="top-bar__tab-list" role="tablist" aria-label="Browser tabs">
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeTabId;
+
+          return (
+            <div
+              className={`top-bar__tab${isActive ? ' top-bar__tab--active' : ''}`}
+              key={tab.id}
+              role="presentation"
+            >
+              <button
+                className="top-bar__tab-select"
+                role="tab"
+                type="button"
+                title={tab.label}
+                aria-selected={isActive}
+                onClick={() => onSelectTab(tab.id)}
+              >
+                <span className="top-bar__tab-label">{tab.label}</span>
+              </button>
+              <button
+                className="top-bar__tab-close"
+                disabled={!canCloseTabs}
+                type="button"
+                title={canCloseTabs ? `Close ${tab.label}` : 'Last tab cannot be closed'}
+                aria-label={canCloseTabs ? `Close ${tab.label}` : 'Last tab cannot be closed'}
+                onClick={() => onCloseTab(tab.id)}
+              >
+                <X aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <button className="icon-button top-bar__new-tab" title="New tab" type="button" onClick={onAddTab}>
+        <Plus aria-hidden="true" size={20} strokeWidth={2} />
+        <span className="sr-only">New tab</span>
+      </button>
+    </div>
+  );
+}
+
 export function TopBar({
+  activeTabId,
   canGoBack,
   canGoForward,
   currentRoute,
   historyEntries,
   historyIndex,
   nodeSettings,
+  tabs,
+  onAddTab,
+  onCloseTab,
   onGoBack,
   onGoForward,
   onGoToHistoryIndex,
   onNavigate,
   onSaveNodeSettings,
+  onSelectTab,
 }: TopBarProps) {
   const [addressValue, setAddressValue] = useState('');
   const [addressError, setAddressError] = useState('');
 
   useEffect(() => {
     setAddressValue(currentRoute?.displayUrl ?? '');
-  }, [currentRoute]);
+    setAddressError('');
+  }, [activeTabId, currentRoute]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -164,6 +239,13 @@ export function TopBar({
 
   return (
     <header className="top-bar">
+      <BrowserTabs
+        activeTabId={activeTabId}
+        tabs={tabs}
+        onAddTab={onAddTab}
+        onCloseTab={onCloseTab}
+        onSelectTab={onSelectTab}
+      />
       <form className="top-bar__address-form" onSubmit={handleSubmit}>
         <HistoryButton
           canNavigate={canGoBack}

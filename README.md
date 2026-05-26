@@ -39,12 +39,12 @@ more broadly.
   `ATTACHMENT`.
 - Browse read-only node API endpoints with paths such as `/admin/status`.
 - Browse all public services for one name with `qdn://*/name`.
+- Use session-only browser tabs with independent page history.
 - Use in-session Back and Forward navigation history.
 - Build a Linux x64 AppImage and a Windows x64 portable executable.
 
 ## Planned Work
 
-- Browser-style tabs.
 - Per-tab account selection.
 - Additional derived addresses from the same wallet.
 - `qdnRequest` support with approval prompts for account access and signing.
