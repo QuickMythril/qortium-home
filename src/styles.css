@@ -447,6 +447,9 @@ h1 {
   background: #192020;
   border: 1px solid #263232;
   border-radius: 7px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .top-bar__tab--active {
@@ -456,26 +459,8 @@ h1 {
 }
 
 .top-bar__tab--dragging {
+  cursor: grabbing;
   opacity: 0.55;
-}
-
-.top-bar__tab--drop-before::before,
-.top-bar__tab--drop-after::after {
-  position: absolute;
-  top: 5px;
-  bottom: 5px;
-  width: 2px;
-  content: "";
-  background: #87d99b;
-  border-radius: 999px;
-}
-
-.top-bar__tab--drop-before::before {
-  left: 2px;
-}
-
-.top-bar__tab--drop-after::after {
-  right: 2px;
 }
 
 .top-bar__tab-select,

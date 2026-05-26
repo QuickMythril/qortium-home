@@ -1,6 +1,6 @@
 import { ArrowRight, ChevronLeft, ChevronRight, Globe2, Plus, X } from 'lucide-react';
-import type { DragEvent, FormEvent, MouseEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent, MouseEvent, PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NodeStatusButton } from './NodeStatusButton';
 import { Popover } from './components/Popover';
 import type { AppRoute } from './routes';
@@ -157,20 +157,115 @@ function BrowserTabs({
   tabs: BrowserTabSummary[];
 }) {
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
-  const [dragTarget, setDragTarget] = useState<{
-    position: TabDropPosition;
+  const dragStateRef = useRef<{
+    hasReordered: boolean;
+    pointerId: number;
     tabId: string;
   } | null>(null);
+  const suppressedClickTabIdRef = useRef<string | null>(null);
+  const tabElementsRef = useRef(new Map<string, HTMLDivElement>());
 
-  function getDropPosition(event: DragEvent<HTMLElement>) {
-    const bounds = event.currentTarget.getBoundingClientRect();
+  function clearDragState(event?: PointerEvent<HTMLElement>) {
+    if (event && dragStateRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
 
-    return event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
+    if (dragStateRef.current?.hasReordered) {
+      const tabId = dragStateRef.current.tabId;
+
+      suppressedClickTabIdRef.current = tabId;
+      window.setTimeout(() => {
+        if (suppressedClickTabIdRef.current === tabId) {
+          suppressedClickTabIdRef.current = null;
+        }
+      }, 0);
+    }
+
+    if (event?.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    dragStateRef.current = null;
+    setDraggedTabId(null);
   }
 
-  function clearDragState() {
-    setDraggedTabId(null);
-    setDragTarget(null);
+  function getReorderTarget(pointerClientX: number, sourceTabId: string) {
+    const currentIndex = tabs.findIndex((tab) => tab.id === sourceTabId);
+
+    if (currentIndex === -1 || tabs.length < 2) {
+      return null;
+    }
+
+    const tabsWithoutDraggedTab = tabs.filter((tab) => tab.id !== sourceTabId);
+    let targetTabId = tabsWithoutDraggedTab[tabsWithoutDraggedTab.length - 1]?.id;
+    let dropPosition: TabDropPosition = 'after';
+
+    for (const tab of tabsWithoutDraggedTab) {
+      const element = tabElementsRef.current.get(tab.id);
+
+      if (!element) {
+        continue;
+      }
+
+      const bounds = element.getBoundingClientRect();
+
+      if (pointerClientX < bounds.left + bounds.width / 2) {
+        targetTabId = tab.id;
+        dropPosition = 'before';
+        break;
+      }
+    }
+
+    if (!targetTabId) {
+      return null;
+    }
+
+    const targetIndex = tabsWithoutDraggedTab.findIndex((tab) => tab.id === targetTabId);
+    const insertIndex = dropPosition === 'after' ? targetIndex + 1 : targetIndex;
+
+    if (insertIndex === currentIndex) {
+      return null;
+    }
+
+    return {
+      dropPosition,
+      targetTabId,
+    };
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>, tabId: string) {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    if ((event.target as HTMLElement).closest('.top-bar__tab-close')) {
+      return;
+    }
+
+    dragStateRef.current = {
+      hasReordered: false,
+      pointerId: event.pointerId,
+      tabId,
+    };
+    setDraggedTabId(tabId);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    const dragState = dragStateRef.current;
+
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const reorderTarget = getReorderTarget(event.clientX, dragState.tabId);
+
+    if (!reorderTarget) {
+      return;
+    }
+
+    dragState.hasReordered = true;
+    onReorderTab(dragState.tabId, reorderTarget.targetTabId, reorderTarget.dropPosition);
   }
 
   return (
@@ -187,17 +282,20 @@ function BrowserTabs({
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
-          const isDragTarget = dragTarget?.tabId === tab.id;
 
           return (
             <div
               className={`top-bar__tab${isActive ? ' top-bar__tab--active' : ''}${
                 draggedTabId === tab.id ? ' top-bar__tab--dragging' : ''
-              }${
-                isDragTarget ? ` top-bar__tab--drop-${dragTarget.position}` : ''
               }`}
-              draggable
               key={tab.id}
+              ref={(element) => {
+                if (element) {
+                  tabElementsRef.current.set(tab.id, element);
+                } else {
+                  tabElementsRef.current.delete(tab.id);
+                }
+              }}
               role="presentation"
               onAuxClick={(event) => {
                 if (event.button === 1) {
@@ -205,43 +303,11 @@ function BrowserTabs({
                   onCloseTab(tab.id);
                 }
               }}
-              onDragEnd={clearDragState}
-              onDragLeave={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                  setDragTarget((currentTarget) =>
-                    currentTarget?.tabId === tab.id ? null : currentTarget,
-                  );
-                }
-              }}
-              onDragOver={(event) => {
-                if (!draggedTabId || draggedTabId === tab.id) {
-                  return;
-                }
-
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-                setDragTarget({
-                  tabId: tab.id,
-                  position: getDropPosition(event),
-                });
-              }}
-              onDragStart={(event) => {
-                setDraggedTabId(tab.id);
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', tab.id);
-              }}
-              onDrop={(event) => {
-                const sourceTabId = draggedTabId || event.dataTransfer.getData('text/plain');
-
-                if (!sourceTabId || sourceTabId === tab.id) {
-                  clearDragState();
-                  return;
-                }
-
-                event.preventDefault();
-                onReorderTab(sourceTabId, tab.id, getDropPosition(event));
-                clearDragState();
-              }}
+              onLostPointerCapture={clearDragState}
+              onPointerCancel={clearDragState}
+              onPointerDown={(event) => handlePointerDown(event, tab.id)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={clearDragState}
             >
               <button
                 className="top-bar__tab-select"
@@ -249,7 +315,15 @@ function BrowserTabs({
                 type="button"
                 title={tab.label}
                 aria-selected={isActive}
-                onClick={() => onSelectTab(tab.id)}
+                onClick={(event) => {
+                  if (suppressedClickTabIdRef.current === tab.id) {
+                    suppressedClickTabIdRef.current = null;
+                    event.preventDefault();
+                    return;
+                  }
+
+                  onSelectTab(tab.id);
+                }}
               >
                 <span className="top-bar__tab-label">{tab.label}</span>
               </button>
