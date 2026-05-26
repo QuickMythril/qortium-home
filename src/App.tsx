@@ -88,6 +88,8 @@ export function App() {
   const [nodeSettingsError, setNodeSettingsError] = useState('');
   const [tabState, setTabState] = useState<BrowserTabState>(createInitialTabState);
   const activeTab = tabState.tabs.find((tab) => tab.id === tabState.activeTabId) ?? tabState.tabs[0];
+  const activeAccount =
+    accountsState.accounts.find((account) => account.id === activeTab.accountId) ?? null;
   const routeHistory = activeTab.history;
   const currentRoute = routeHistory.entries[routeHistory.index] ?? null;
   const isViewerRoute = currentRoute !== null;
@@ -365,6 +367,7 @@ export function App() {
     <main className="app-shell">
       <TopBar
         activeTabId={tabState.activeTabId}
+        activeAccount={activeAccount}
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         currentRoute={currentRoute}

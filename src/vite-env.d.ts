@@ -13,6 +13,14 @@ type QortiumAccountsState = {
   activeAccountId: string | null;
 };
 
+type QortiumAccountProfile = {
+  accountId: string;
+  address: string;
+  avatarUrl: string | null;
+  label: string;
+  name: string | null;
+};
+
 type QortiumSelectWalletResult =
   | {
       canceled: true;
@@ -129,6 +137,7 @@ interface Window {
   qortiumHome: {
     accounts: {
       list: () => Promise<QortiumAccountsState>;
+      getProfile: (accountId: string) => Promise<QortiumAccountProfile>;
       selectWalletFile: () => Promise<QortiumSelectWalletResult>;
       discardLoadedWallet: (token: string) => Promise<void>;
       saveLoadedWallet: (token: string, name: string) => Promise<QortiumAccountsState>;

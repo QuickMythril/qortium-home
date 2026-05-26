@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('qortiumHome', {
   appName: 'Qortium Home',
   accounts: {
     list: () => ipcRenderer.invoke('accounts:list'),
+    getProfile: (accountId: string) => ipcRenderer.invoke('accounts:getProfile', accountId),
     selectWalletFile: () => ipcRenderer.invoke('accounts:selectWalletFile'),
     discardLoadedWallet: (token: string) => ipcRenderer.invoke('accounts:discardLoadedWallet', token),
     saveLoadedWallet: (token: string, name: string) =>

@@ -406,7 +406,7 @@ h1 {
 .top-bar {
   z-index: 12;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: start;
   width: 100%;
@@ -625,6 +625,37 @@ h1 {
 
 .top-bar__go-button {
   color: #87d99b;
+}
+
+.account-chip {
+  display: grid;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  place-items: center;
+  overflow: hidden;
+  color: #f4f0e8;
+  background: #202727;
+  border: 1px solid #344141;
+  border-radius: 999px;
+}
+
+.account-chip__avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-chip__fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: #121515;
+  font-size: var(--font-size-ui);
+  font-weight: 700;
+  line-height: 1;
+  background: #87d99b;
 }
 
 .top-bar__error {
@@ -1225,7 +1256,7 @@ h1 {
   }
 
   .top-bar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 6px;
     padding: 8px 10px;
   }

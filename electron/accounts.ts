@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { getNodeApiUrl } from './node-settings.js';
 
 const requireFromElectron = createRequire(import.meta.url);
 const asmCrypto = requireFromElectron('asmcrypto.js') as {
@@ -109,6 +110,14 @@ type AccountSummary = {
 type AccountsState = {
   accounts: AccountSummary[];
   activeAccountId: string | null;
+};
+
+type AccountProfile = {
+  accountId: string;
+  address: string;
+  avatarUrl: string | null;
+  label: string;
+  name: string | null;
 };
 
 type CreateWalletResult = AccountsState & {
@@ -537,6 +546,80 @@ function getDefaultWalletBackupPath(filename: string) {
   return path.join(basePath || process.cwd(), filename);
 }
 
+function getNameValue(value: unknown) {
+  if (!isRecord(value) || !isNonEmptyString(value.name)) {
+    return null;
+  }
+
+  return value.name.trim();
+}
+
+async function fetchNodeJson(pathname: string, nodeApiUrl = getNodeApiUrl()) {
+  let response: Response;
+
+  try {
+    response = await fetch(`${nodeApiUrl}${pathname}`);
+  } catch {
+    return null;
+  }
+
+  if (!response.ok) {
+    return null;
+  }
+
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+async function getPrimaryName(address: string) {
+  const primaryName = await fetchNodeJson(`/names/primary/${encodeURIComponent(address)}`);
+
+  return getNameValue(primaryName);
+}
+
+async function getFirstOwnedName(address: string) {
+  const ownedNames = await fetchNodeJson(`/names/address/${encodeURIComponent(address)}?limit=0`);
+
+  if (!Array.isArray(ownedNames)) {
+    return null;
+  }
+
+  for (const ownedName of ownedNames) {
+    const name = getNameValue(ownedName);
+
+    if (name) {
+      return name;
+    }
+  }
+
+  return null;
+}
+
+async function getAccountProfile(accountId: string): Promise<AccountProfile> {
+  const store = readWalletStore();
+  const wallet = store.wallets.find((storedWallet) => storedWallet.id === accountId);
+
+  if (!wallet) {
+    throw new Error('Selected account is not saved.');
+  }
+
+  const name = (await getPrimaryName(wallet.address)) ?? (await getFirstOwnedName(wallet.address));
+  const avatarUrl = name
+    ? `${getNodeApiUrl()}/arbitrary/THUMBNAIL/${encodeURIComponent(name)}/qortal_avatar?async=true`
+    : null;
+
+  return {
+    accountId: wallet.id,
+    address: wallet.address,
+    avatarUrl,
+    label: wallet.label,
+    name,
+  };
+}
+
 function upsertWallet(store: WalletStore, wallet: StoredWallet) {
   const existingWalletIndex = store.wallets.findIndex((storedWallet) => storedWallet.id === wallet.id);
 
@@ -752,6 +835,7 @@ async function removeWallet(accountId: string, password?: string) {
 
 export function registerAccountIpcHandlers() {
   ipcMain.handle('accounts:list', () => toAccountsState());
+  ipcMain.handle('accounts:getProfile', (_event, accountId: string) => getAccountProfile(accountId));
   ipcMain.handle('accounts:selectWalletFile', (event) => selectWalletFile(event));
   ipcMain.handle('accounts:discardLoadedWallet', (_event, token: string) => discardLoadedWallet(token));
   ipcMain.handle('accounts:saveLoadedWallet', (_event, token: string, name: string) =>

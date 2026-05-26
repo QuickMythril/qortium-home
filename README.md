@@ -41,6 +41,7 @@ more broadly.
 - Browse all public services for one name with `qdn://*/name`.
 - Use session-only browser tabs with independent page history.
 - Choose a separate selected wallet for each tab before navigating.
+- Show the active tab's selected wallet as an avatar or initial in the top bar.
 - Use in-session Back and Forward navigation history.
 - Build a Linux x64 AppImage and a Windows x64 portable executable.
 

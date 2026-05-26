@@ -33,6 +33,7 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - Each tab has independent Back and Forward navigation history.
   - Each tab should be associated with its own selected account.
   - Different tabs should be able to use different accounts at the same time.
+  - The active tab should show a compact account identity chip using the account avatar, registered name, address, and saved wallet label.
   - Future tabs should ideally isolate rendered app/web content from each other, especially when they use different accounts.
   - Treat strict tab isolation as more important on desktop than Android when Electron `WebContentsView` support is added.
 - Primary QDN browsing features:

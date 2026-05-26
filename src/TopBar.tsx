@@ -7,6 +7,7 @@ import type { AppRoute } from './routes';
 import { parseAppAddress } from './routes';
 
 type TopBarProps = {
+  activeAccount: QortiumAccountSummary | null;
   activeTabId: string;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -47,8 +48,114 @@ type HistoryMenuItem = {
   index: number;
 };
 
+const accountProfileCache = new Map<string, Promise<QortiumAccountProfile>>();
+
 function formatHistoryEntry(entry: AppRoute | null) {
   return entry?.displayUrl ?? 'Qortium Home';
+}
+
+function getAccountProfileCacheKey(account: QortiumAccountSummary, nodeApiUrl: string) {
+  return `${nodeApiUrl}:${account.id}:${account.address}:${account.label}`;
+}
+
+function getAccountProfile(account: QortiumAccountSummary, nodeApiUrl: string) {
+  const cacheKey = getAccountProfileCacheKey(account, nodeApiUrl);
+  let profileRequest = accountProfileCache.get(cacheKey);
+
+  if (!profileRequest) {
+    profileRequest = window.qortiumHome.accounts.getProfile(account.id).catch((error) => {
+      accountProfileCache.delete(cacheKey);
+      throw error;
+    });
+    accountProfileCache.set(cacheKey, profileRequest);
+  }
+
+  return profileRequest;
+}
+
+function getDisplayInitial(value: string) {
+  const character = value.trim().charAt(0);
+
+  return character ? character.toUpperCase() : '?';
+}
+
+function getAccountTooltip(account: QortiumAccountSummary, profile: QortiumAccountProfile | null) {
+  return [
+    profile?.name ?? '',
+    profile?.address ?? account.address,
+    profile?.label ?? account.label,
+  ].filter(Boolean).join('\n');
+}
+
+function AccountChip({
+  account,
+  nodeApiUrl,
+}: {
+  account: QortiumAccountSummary | null;
+  nodeApiUrl: string;
+}) {
+  const [profile, setProfile] = useState<QortiumAccountProfile | null>(null);
+  const [hasAvatarError, setHasAvatarError] = useState(false);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    setProfile(null);
+    setHasAvatarError(false);
+
+    if (!account) {
+      return () => {
+        isDisposed = true;
+      };
+    }
+
+    getAccountProfile(account, nodeApiUrl)
+      .then((nextProfile) => {
+        if (!isDisposed) {
+          setProfile(nextProfile);
+        }
+      })
+      .catch(() => {
+        if (!isDisposed) {
+          setProfile(null);
+        }
+      });
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [account, nodeApiUrl]);
+
+  if (!account) {
+    return null;
+  }
+
+  const displayName = profile?.name ?? account.label;
+  const avatarUrl = profile?.avatarUrl;
+  const showAvatar = !!avatarUrl && !hasAvatarError;
+
+  return (
+    <div
+      className="account-chip"
+      title={getAccountTooltip(account, profile)}
+      aria-label="Selected tab account"
+    >
+      {showAvatar ? (
+        <img
+          className="account-chip__avatar"
+          src={avatarUrl}
+          alt=""
+          aria-hidden="true"
+          onError={() => setHasAvatarError(true)}
+        />
+      ) : (
+        <span className="account-chip__fallback" aria-hidden="true">
+          {getDisplayInitial(displayName)}
+        </span>
+      )}
+      <span className="sr-only">{displayName}</span>
+    </div>
+  );
 }
 
 function getHistoryItems(
@@ -356,6 +463,7 @@ function BrowserTabs({
 }
 
 export function TopBar({
+  activeAccount,
   activeTabId,
   canGoBack,
   canGoForward,
@@ -448,6 +556,7 @@ export function TopBar({
         </button>
         {addressError ? <p className="top-bar__error">{addressError}</p> : null}
       </form>
+      <AccountChip account={activeAccount} nodeApiUrl={nodeSettings.nodeApiUrl} />
       <NodeStatusButton nodeSettings={nodeSettings} onSaveNodeSettings={onSaveNodeSettings} />
     </header>
   );
