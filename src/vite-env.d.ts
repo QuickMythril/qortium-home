@@ -29,6 +29,32 @@ type QortiumCreateWalletResult = QortiumAccountsState & {
   canceled: boolean;
 };
 
+type QortiumNodeSettingsMode = 'custom' | 'previewnet';
+
+type QortiumNodeSettings = {
+  customUrl: string;
+  mode: QortiumNodeSettingsMode;
+  nodeApiUrl: string;
+  previewnetUrl: string;
+};
+
+type QortiumNodeSettingsRequest = {
+  customUrl?: string;
+  mode: QortiumNodeSettingsMode;
+};
+
+type QortiumNodeStatusResult =
+  | {
+      nodeApiUrl: string;
+      ok: true;
+      status: unknown;
+    }
+  | {
+      message: string;
+      nodeApiUrl: string;
+      ok: false;
+    };
+
 type QortiumQdnAuthorizeRequest = {
   identifier?: string;
   name: string;
@@ -113,6 +139,12 @@ interface Window {
       removeWallet: (accountId: string, password?: string) => Promise<QortiumAccountsState>;
     };
     appName: string;
+    node: {
+      getSettings: () => Promise<QortiumNodeSettings>;
+      saveSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
+      testConnection: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeStatusResult>;
+      getStatus: () => Promise<QortiumNodeStatusResult>;
+    };
     qdn: {
       authorizeResource: (
         request: QortiumQdnAuthorizeRequest,

@@ -2,8 +2,8 @@ import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { getNodeApiUrl } from './node-settings.js';
 
-const NODE_API_URL = process.env.QORTIUM_HOME_NODE_API_URL ?? 'http://127.0.0.1:24891';
 const PREVIEW_API_KEY_PATH = path.join(os.homedir(), 'git', 'qortium', 'preview', 'apikey.txt');
 const PUBLIC_QDN_SERVICES = new Set([
   'APP',
@@ -191,7 +191,7 @@ function splitPathAndQuery(resourcePath: string) {
   };
 }
 
-function buildRawResourceUrl(resource: QdnResourceRequest, attachment = false) {
+function buildRawResourceUrl(resource: QdnResourceRequest, nodeApiUrl: string, attachment = false) {
   const identifierPath = resource.identifier ? `/${encodeURIComponent(resource.identifier)}` : '';
   const { pathOnly, queryString } = splitPathAndQuery(resource.path);
   const queryParams = new URLSearchParams(queryString);
@@ -206,7 +206,7 @@ function buildRawResourceUrl(resource: QdnResourceRequest, attachment = false) {
 
   const rawQueryString = queryParams.toString();
 
-  return `${NODE_API_URL}/arbitrary/${resource.service}/${encodeURIComponent(resource.name)}${identifierPath}${
+  return `${nodeApiUrl}/arbitrary/${resource.service}/${encodeURIComponent(resource.name)}${identifierPath}${
     rawQueryString ? `?${rawQueryString}` : ''
   }`;
 }
@@ -239,7 +239,7 @@ function getSuggestedFilename(request: QdnRawResourceRequest, resource: QdnResou
   return sanitizeFilename(`${resource.service}_${resource.name}_${resource.identifier ?? 'default'}`);
 }
 
-function getNodeApiPath(value: unknown) {
+function getNodeApiPath(value: unknown, nodeApiUrl: string) {
   const apiPath = getString(value);
 
   if (!apiPath.startsWith('/') || apiPath.startsWith('//')) {
@@ -250,13 +250,13 @@ function getNodeApiPath(value: unknown) {
     throw new Error('Node API path contains invalid control characters.');
   }
 
-  const url = new URL(apiPath, NODE_API_URL);
+  const url = new URL(apiPath, nodeApiUrl);
 
   return `${url.pathname}${url.search}`;
 }
 
-function getNodeUnavailableMessage() {
-  return `Qortium node is unavailable at ${NODE_API_URL}.`;
+function getNodeUnavailableMessage(nodeApiUrl: string) {
+  return `Qortium node is unavailable at ${nodeApiUrl}.`;
 }
 
 function getNodeApiKey() {
@@ -269,20 +269,20 @@ function getNodeApiKey() {
   return apiKey;
 }
 
-async function fetchNode(pathname: string, options: RequestInit = {}) {
+async function fetchNode(pathname: string, options: RequestInit = {}, nodeApiUrl = getNodeApiUrl()) {
   let response: Response;
 
   try {
-    response = await fetch(`${NODE_API_URL}${pathname}`, options);
+    response = await fetch(`${nodeApiUrl}${pathname}`, options);
   } catch {
-    throw new Error(getNodeUnavailableMessage());
+    throw new Error(getNodeUnavailableMessage(nodeApiUrl));
   }
 
   return response;
 }
 
-async function fetchNodeJson(pathname: string, options: RequestInit = {}) {
-  const response = await fetchNode(pathname, options);
+async function fetchNodeJson(pathname: string, options: RequestInit = {}, nodeApiUrl = getNodeApiUrl()) {
+  const response = await fetchNode(pathname, options, nodeApiUrl);
   const text = await response.text();
 
   if (!response.ok) {
@@ -292,12 +292,21 @@ async function fetchNodeJson(pathname: string, options: RequestInit = {}) {
   return text ? (JSON.parse(text) as unknown) : null;
 }
 
-async function fetchRawResource(resource: QdnResourceRequest, apiKey: string, attachment = false) {
-  const response = await fetchNode(buildRawResourceUrl(resource, attachment).replace(NODE_API_URL, ''), {
-    headers: {
-      'X-API-KEY': apiKey,
+async function fetchRawResource(
+  resource: QdnResourceRequest,
+  apiKey: string,
+  nodeApiUrl: string,
+  attachment = false,
+) {
+  const response = await fetchNode(
+    buildRawResourceUrl(resource, nodeApiUrl, attachment).replace(nodeApiUrl, ''),
+    {
+      headers: {
+        'X-API-KEY': apiKey,
+      },
     },
-  });
+    nodeApiUrl,
+  );
 
   if (!response.ok) {
     const message = (await response.text()).trim();
@@ -307,14 +316,24 @@ async function fetchRawResource(resource: QdnResourceRequest, apiKey: string, at
   return response;
 }
 
-async function authorizeResource(service: string, name: string, identifier: string | undefined, apiKey: string) {
+async function authorizeResource(
+  service: string,
+  name: string,
+  identifier: string | undefined,
+  apiKey: string,
+  nodeApiUrl: string,
+) {
   const identifierPath = identifier ? `/${encodeURIComponent(identifier)}` : '';
-  const response = await fetchNode(`/render/authorize/${service}/${encodeURIComponent(name)}${identifierPath}`, {
-    method: 'POST',
-    headers: {
-      'X-API-KEY': apiKey,
+  const response = await fetchNode(
+    `/render/authorize/${service}/${encodeURIComponent(name)}${identifierPath}`,
+    {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+      },
     },
-  });
+    nodeApiUrl,
+  );
 
   if (!response.ok) {
     const message = (await response.text()).trim();
@@ -349,16 +368,17 @@ export function registerQdnIpcHandlers() {
   ipcMain.handle('qdn:authorizeResource', async (_event, request: QdnAuthorizeResourceRequest) => {
     const { service, name, identifier } = getAuthorizeRequest(request);
     const apiKey = getNodeApiKey();
+    const nodeApiUrl = getNodeApiUrl();
 
-    await authorizeResource(service, name, undefined, apiKey);
+    await authorizeResource(service, name, undefined, apiKey, nodeApiUrl);
 
     if (identifier) {
-      await authorizeResource(service, name, identifier, apiKey);
+      await authorizeResource(service, name, identifier, apiKey, nodeApiUrl);
     }
 
     return {
       authorized: true,
-      nodeApiUrl: NODE_API_URL,
+      nodeApiUrl,
     };
   });
 
@@ -367,9 +387,10 @@ export function registerQdnIpcHandlers() {
   });
 
   ipcMain.handle('qdn:fetchNodeApi', async (_event, request: NodeApiRequest) => {
-    const apiPath = getNodeApiPath(request.path);
+    const nodeApiUrl = getNodeApiUrl();
+    const apiPath = getNodeApiPath(request.path, nodeApiUrl);
     const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
-    const response = await fetchNode(apiPath);
+    const response = await fetchNode(apiPath, {}, nodeApiUrl);
     const contentLength = getContentLength(response);
     const contentType = response.headers.get('content-type') ?? '';
 
@@ -411,8 +432,9 @@ export function registerQdnIpcHandlers() {
   ipcMain.handle('qdn:fetchResourceText', async (_event, request: QdnRawResourceRequest) => {
     const resource = getRawResourceRequest(request);
     const apiKey = getNodeApiKey();
+    const nodeApiUrl = getNodeApiUrl();
     const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
-    const response = await fetchRawResource(resource, apiKey);
+    const response = await fetchRawResource(resource, apiKey, nodeApiUrl);
     const contentLength = getContentLength(response);
     const contentType = response.headers.get('content-type') ?? '';
 
@@ -447,6 +469,7 @@ export function registerQdnIpcHandlers() {
   ipcMain.handle('qdn:downloadResource', async (event, request: QdnRawResourceRequest) => {
     const resource = getRawResourceRequest(request);
     const apiKey = getNodeApiKey();
+    const nodeApiUrl = getNodeApiUrl();
     const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
     const saveDialogOptions = {
       title: 'Save QDN Resource',
@@ -462,7 +485,7 @@ export function registerQdnIpcHandlers() {
       };
     }
 
-    const response = await fetchRawResource(resource, apiKey, true);
+    const response = await fetchRawResource(resource, apiKey, nodeApiUrl, true);
     const content = Buffer.from(await response.arrayBuffer());
     writeFileSync(result.filePath, content);
 

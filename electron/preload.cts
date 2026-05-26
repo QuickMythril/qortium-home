@@ -18,6 +18,14 @@ contextBridge.exposeInMainWorld('qortiumHome', {
     removeWallet: (accountId: string, password?: string) =>
       ipcRenderer.invoke('accounts:removeWallet', accountId, password),
   },
+  node: {
+    getSettings: () => ipcRenderer.invoke('node:getSettings'),
+    saveSettings: (request: { customUrl?: string; mode: 'custom' | 'previewnet' }) =>
+      ipcRenderer.invoke('node:saveSettings', request),
+    testConnection: (request: { customUrl?: string; mode: 'custom' | 'previewnet' }) =>
+      ipcRenderer.invoke('node:testConnection', request),
+    getStatus: () => ipcRenderer.invoke('node:getStatus'),
+  },
   qdn: {
     authorizeResource: (request: { identifier?: string; name: string; service: string }) =>
       ipcRenderer.invoke('qdn:authorizeResource', request),

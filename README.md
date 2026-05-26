@@ -25,19 +25,23 @@ more broadly.
 - Save loaded wallet metadata in the local Electron app data folder.
 - Keep wallets locked after restart and unlocked only for the current session.
 - Select, unlock, lock, and remove saved wallets.
-- Show basic node status for the current local Previewnet node.
+- Show node status for the configured node.
+- Switch between the Qortium Previewnet node preset and one saved custom node.
 - Browse QDN services, names, and resources from `qdn://` URLs.
 - Load `APP` and `WEBSITE` resources in an embedded viewer.
 - Load image-style QDN resources such as `IMAGE`, `THUMBNAIL`, and
   `QCHAT_IMAGE`.
+- Load text-style QDN resources such as `JSON`, `METADATA`, `BLOG`, and
+  `MESSAGE`.
+- Download file-style QDN resources such as `DOCUMENT`, `FILE`, `FILES`, and
+  `ATTACHMENT`.
+- Browse read-only node API endpoints with paths such as `/admin/status`.
 - Browse all public services for one name with `qdn://*/name`.
 - Use in-session Back and Forward navigation history.
 - Build a Linux x64 AppImage and a Windows x64 portable executable.
 
 ## Planned Work
 
-- Custom node configuration in the UI.
-- Direct API endpoint browsing.
 - Browser-style tabs.
 - Per-tab account selection.
 - Additional derived addresses from the same wallet.
@@ -101,9 +105,10 @@ The development helper below is for local Previewnet testing only:
 npm run qdn:bootstrap-test-data
 ```
 
-It registers or reuses a local test name and publishes APP, WEBSITE, and IMAGE
-fixtures that Qortium Home can browse. It expects a running local Previewnet
-node and a local preview account with permission to publish test resources.
+It registers or reuses a local test name and publishes APP, WEBSITE, IMAGE,
+JSON, and FILE fixtures that Qortium Home can browse. It expects a running local
+Previewnet node and a local preview account with permission to publish test
+resources.
 
 Supported environment variables:
 

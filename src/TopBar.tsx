@@ -12,10 +12,12 @@ type TopBarProps = {
   currentRoute: AppRoute | null;
   historyEntries: (AppRoute | null)[];
   historyIndex: number;
+  nodeSettings: QortiumNodeSettings;
   onGoBack: () => void;
   onGoForward: () => void;
   onGoToHistoryIndex: (index: number) => void;
   onNavigate: (route: AppRoute) => void;
+  onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
 };
 
 type HistoryButtonProps = {
@@ -132,10 +134,12 @@ export function TopBar({
   currentRoute,
   historyEntries,
   historyIndex,
+  nodeSettings,
   onGoBack,
   onGoForward,
   onGoToHistoryIndex,
   onNavigate,
+  onSaveNodeSettings,
 }: TopBarProps) {
   const [addressValue, setAddressValue] = useState('');
   const [addressError, setAddressError] = useState('');
@@ -147,7 +151,7 @@ export function TopBar({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const parsedUrl = parseAppAddress(addressValue);
+    const parsedUrl = parseAppAddress(addressValue, nodeSettings.nodeApiUrl);
 
     if (!parsedUrl.success) {
       setAddressError(parsedUrl.message);
@@ -202,7 +206,7 @@ export function TopBar({
         </button>
         {addressError ? <p className="top-bar__error">{addressError}</p> : null}
       </form>
-      <NodeStatusButton />
+      <NodeStatusButton nodeSettings={nodeSettings} onSaveNodeSettings={onSaveNodeSettings} />
     </header>
   );
 }

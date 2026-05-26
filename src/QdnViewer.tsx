@@ -40,6 +40,7 @@ type QdnViewerState =
     };
 
 type QdnViewerProps = {
+  nodeApiUrl: string;
   resource: QdnResource;
 };
 
@@ -218,9 +219,9 @@ async function readProperties(response: Response) {
   return data;
 }
 
-async function loadResourceProperties(resource: QdnResource, signal: AbortSignal) {
+async function loadResourceProperties(resource: QdnResource, nodeApiUrl: string, signal: AbortSignal) {
   try {
-    const response = await fetch(buildQdnResourcePropertiesUrl(resource), {
+    const response = await fetch(buildQdnResourcePropertiesUrl(resource, nodeApiUrl), {
       signal,
     });
 
@@ -249,7 +250,7 @@ async function verifyRenderUrl(renderUrl: string, signal: AbortSignal) {
   await response.body?.cancel();
 }
 
-function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
+function useQdnResourceLoader(resource: QdnResource, nodeApiUrl: string, retryToken: number) {
   const [state, setState] = useState<QdnViewerState>({
     phase: 'loading',
     message: 'Checking QDN resource',
@@ -276,7 +277,7 @@ function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
       hasTriggeredDownload = true;
 
       try {
-        await fetch(buildQdnDownloadUrl(resource), {
+        await fetch(buildQdnDownloadUrl(resource, nodeApiUrl), {
           signal: abortController.signal,
         });
       } catch (error) {
@@ -288,13 +289,13 @@ function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
 
     async function setReadyState(status: QdnResourceStatus) {
       const viewerKind = getQdnViewerKind(resource.service);
-      const renderUrl = buildQdnRenderUrl(resource);
+      const renderUrl = buildQdnRenderUrl(resource, nodeApiUrl);
 
       if (viewerKind === 'iframe' || viewerKind === 'image') {
         await verifyRenderUrl(renderUrl, abortController.signal);
       }
 
-      const properties = await loadResourceProperties(resource, abortController.signal);
+      const properties = await loadResourceProperties(resource, nodeApiUrl, abortController.signal);
 
       setSafeState({
         phase: 'ready',
@@ -310,7 +311,7 @@ function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
 
     async function pollStatus(build: boolean) {
       try {
-        const statusResponse = await fetch(buildQdnStatusUrl(resource, build), {
+        const statusResponse = await fetch(buildQdnStatusUrl(resource, nodeApiUrl, build), {
           signal: abortController.signal,
         });
         const status = await readStatus(statusResponse);
@@ -386,7 +387,7 @@ function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
         window.clearTimeout(timeoutId);
       }
     };
-  }, [resource, resourceKey, retryToken]);
+  }, [nodeApiUrl, resource, resourceKey, retryToken]);
 
   return state;
 }
@@ -794,9 +795,9 @@ function QdnReadyContent({
   );
 }
 
-export function QdnViewer({ resource }: QdnViewerProps) {
+export function QdnViewer({ nodeApiUrl, resource }: QdnViewerProps) {
   const [retryToken, setRetryToken] = useState(0);
-  const state = useQdnResourceLoader(resource, retryToken);
+  const state = useQdnResourceLoader(resource, nodeApiUrl, retryToken);
   const progress = state.phase === 'ready' ? 100 : getStatusProgress(state.status);
   const progressText = getProgressText(state.status);
   const statusLabel = state.phase === 'ready' ? 'Ready' : formatQdnStatus(state.status);

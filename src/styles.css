@@ -129,6 +129,19 @@ h1 {
   width: min(100%, 560px);
 }
 
+.app-message {
+  max-width: min(100%, 520px);
+  margin: 0;
+  color: #cbd5d5;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  text-align: center;
+}
+
+.app-message--error {
+  color: #ef8b84;
+}
+
 .app-main {
   display: grid;
   min-height: 0;
@@ -578,6 +591,65 @@ h1 {
   background: currentColor;
   border: 2px solid #202727;
   border-radius: 999px;
+}
+
+.node-status__popover {
+  width: min(440px, calc(100vw - 40px));
+}
+
+.node-status__content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.node-status__settings {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid #344141;
+}
+
+.node-status__preset {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+  color: #a9b6b6;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.node-status__preset span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #f4f0e8;
+  text-align: right;
+}
+
+.node-status__settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.node-status__message {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+  text-align: right;
+}
+
+.node-status__message--success {
+  color: #87d99b;
+}
+
+.node-status__message--error {
+  color: #ef8b84;
 }
 
 .popover-panel {

@@ -54,8 +54,10 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - Eventually run scripts included with the core to start it.
   - Show node status, including whether the node is connected and whether it has peers.
 - Initial node connection options:
-  - Qortium Previewnet preset: `http://localhost:24891`.
-  - Custom node address entered by the user.
+  - Qortium Previewnet preset: `http://127.0.0.1:24891`.
+  - One saved custom node address entered by the user.
+  - The selected node should persist across app restarts.
+  - Unreachable custom node URLs may still be saved, with the UI showing the node as unavailable until it can connect.
 - Android should connect to an existing node only. It does not need to download, install, or run Qortium Core locally in the initial direction.
 - Use `~/git/Qortal-Hub` only as a reference, not as the product to clone.
 - Target distributable builds:
@@ -143,8 +145,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - QDN service browsing across common service types.
 - Direct Qortal API endpoint viewing for read-only node API `GET` requests.
 - Preinstalled or externally managed core connection support.
-- Qortium Previewnet preset for `http://localhost:24891`.
-- Custom node address configuration.
+- Qortium Previewnet preset for `http://127.0.0.1:24891`.
+- One saved custom node address configuration.
 - Displaying configured node status, connectivity, and peer status.
 - Future downloading and setting up Qortium Core from GitHub releases and prereleases.
 - Future starting of local core through scripts bundled with the core.
@@ -177,8 +179,7 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Which `qdnRequest` actions are read-only and can be allowed without prompting?
 - Which `qdnRequest` actions must always require explicit user approval?
 - Should persistent qdnRequest permissions be keyed by app, tab/session, wallet, derived address, and action?
-- Should users be able to configure multiple Qortal API nodes?
-- Should Qortium Home support multiple saved custom node addresses?
+- When should Qortium Home add multiple saved custom node addresses beyond the first single custom slot?
 - For future core management, should Qortium Home use the same install/unpack folders as Qortal Hub or choose Qortium-specific app data folders?
 - How should Qortium Home discover the latest GitHub release and prerelease?
 - Should prerelease downloads be opt-in only?
@@ -222,8 +223,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
    - Address or endpoint bar.
    - Selected account context for the active page.
 5. Add node connectivity configuration:
-   - Qortium Previewnet preset at `http://localhost:24891`.
-   - Custom node address.
+   - Qortium Previewnet preset at `http://127.0.0.1:24891`.
+   - One saved custom node address.
    - Basic node status.
 6. Add direct API endpoint viewer.
 7. Add basic QDN browser by service type.

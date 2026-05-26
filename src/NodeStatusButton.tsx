@@ -1,30 +1,48 @@
-import { Server, WifiOff } from 'lucide-react';
+import { Check, RefreshCw, Server, WifiOff } from 'lucide-react';
+import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Popover } from './components/Popover';
 
-const NODE_API_URL = 'http://127.0.0.1:24891';
 const STATUS_REFRESH_MS = 15_000;
 
 type NodeStatusResponse = {
+  height: number;
   isMintingPossible: boolean;
   isSynchronizing: boolean;
-  syncPercent?: number | null;
   numberOfConnections: number;
   numberOfDataConnections: number;
-  height: number;
+  syncPercent?: null | number;
 };
 
 type NodeStatusState =
   | { state: 'loading' }
-  | { state: 'available'; data: NodeStatusResponse }
-  | { state: 'unavailable' };
+  | { data: NodeStatusResponse; state: 'available' }
+  | { message?: string; state: 'unavailable' };
 
-type DisplayStatus = 'Checking' | 'Unavailable' | 'Syncing' | 'Minting' | 'Synced';
+type DisplayStatus = 'Checking' | 'Minting' | 'Synced' | 'Syncing' | 'Unavailable';
 
 type DetailRow = {
   label: string;
   value: string;
 };
+
+type ConfigMessage = {
+  kind: 'error' | 'success';
+  text: string;
+} | null;
+
+type NodeStatusButtonProps = {
+  nodeSettings: QortiumNodeSettings;
+  onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
+};
+
+function formatError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return 'Unable to update node settings.';
+  }
+
+  return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+}
 
 function isNodeStatusResponse(value: unknown): value is NodeStatusResponse {
   if (!value || typeof value !== 'object') {
@@ -65,47 +83,59 @@ function getDisplayStatus(status: NodeStatusState): DisplayStatus {
   return 'Synced';
 }
 
-function formatPercent(syncPercent: number | null | undefined) {
+function formatPercent(syncPercent: null | number | undefined) {
   return typeof syncPercent === 'number' ? `${syncPercent.toFixed(0)}%` : 'Unknown';
 }
 
-export function NodeStatusButton() {
+function getNodeSettingsRequest(mode: QortiumNodeSettingsMode, customUrl: string) {
+  return {
+    mode,
+    customUrl: customUrl.trim() || undefined,
+  };
+}
+
+export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatusButtonProps) {
   const [nodeStatus, setNodeStatus] = useState<NodeStatusState>({ state: 'loading' });
+  const [mode, setMode] = useState<QortiumNodeSettingsMode>(nodeSettings.mode);
+  const [customUrl, setCustomUrl] = useState(nodeSettings.customUrl);
+  const [configMessage, setConfigMessage] = useState<ConfigMessage>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const popoverId = 'node-status-details';
 
   useEffect(() => {
+    setMode(nodeSettings.mode);
+    setCustomUrl(nodeSettings.customUrl);
+  }, [nodeSettings]);
+
+  useEffect(() => {
     let isMounted = true;
-    let activeController: AbortController | undefined;
+
+    setNodeStatus({ state: 'loading' });
 
     async function loadNodeStatus() {
-      activeController?.abort();
-      activeController = new AbortController();
-
       try {
-        const response = await fetch(`${NODE_API_URL}/admin/status`, {
-          signal: activeController.signal,
-        });
+        const result = await window.qortiumHome.node.getStatus();
 
-        if (!response.ok) {
-          throw new Error(`Node status request failed with ${response.status}`);
-        }
-
-        const data: unknown = await response.json();
-
-        if (!isNodeStatusResponse(data)) {
-          throw new Error('Node status response did not match the expected shape');
-        }
-
-        if (isMounted) {
-          setNodeStatus({ state: 'available', data });
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+        if (!isMounted) {
           return;
         }
 
+        if (result.ok && isNodeStatusResponse(result.status)) {
+          setNodeStatus({ state: 'available', data: result.status });
+          return;
+        }
+
+        setNodeStatus({
+          state: 'unavailable',
+          message: result.ok ? 'Node status response did not match the expected shape.' : result.message,
+        });
+      } catch (error) {
         if (isMounted) {
-          setNodeStatus({ state: 'unavailable' });
+          setNodeStatus({
+            state: 'unavailable',
+            message: formatError(error),
+          });
         }
       }
     }
@@ -115,33 +145,83 @@ export function NodeStatusButton() {
 
     return () => {
       isMounted = false;
-      activeController?.abort();
       window.clearInterval(refreshInterval);
     };
-  }, []);
+  }, [nodeSettings.nodeApiUrl]);
 
   const displayStatus = getDisplayStatus(nodeStatus);
   const detailRows = useMemo<DetailRow[]>(() => {
-    if (nodeStatus.state !== 'available') {
-      return [
-        { label: 'Node', value: NODE_API_URL },
-        { label: 'Status', value: displayStatus },
-        { label: 'Chain peers', value: '-' },
-        { label: 'Data peers', value: '-' },
-        { label: 'Height', value: '-' },
-        { label: 'Sync', value: '-' },
-      ];
+    const rows: DetailRow[] =
+      nodeStatus.state === 'available'
+        ? [
+            { label: 'Node', value: nodeSettings.nodeApiUrl },
+            { label: 'Status', value: displayStatus },
+            { label: 'Chain peers', value: nodeStatus.data.numberOfConnections.toLocaleString() },
+            { label: 'Data peers', value: nodeStatus.data.numberOfDataConnections.toLocaleString() },
+            { label: 'Height', value: nodeStatus.data.height.toLocaleString() },
+            { label: 'Sync', value: formatPercent(nodeStatus.data.syncPercent) },
+          ]
+        : [
+            { label: 'Node', value: nodeSettings.nodeApiUrl },
+            { label: 'Status', value: displayStatus },
+            { label: 'Chain peers', value: '-' },
+            { label: 'Data peers', value: '-' },
+            { label: 'Height', value: '-' },
+            { label: 'Sync', value: '-' },
+          ];
+
+    if (nodeStatus.state === 'unavailable' && nodeStatus.message) {
+      rows.push({
+        label: 'Error',
+        value: nodeStatus.message,
+      });
     }
 
-    return [
-      { label: 'Node', value: NODE_API_URL },
-      { label: 'Status', value: displayStatus },
-      { label: 'Chain peers', value: nodeStatus.data.numberOfConnections.toLocaleString() },
-      { label: 'Data peers', value: nodeStatus.data.numberOfDataConnections.toLocaleString() },
-      { label: 'Height', value: nodeStatus.data.height.toLocaleString() },
-      { label: 'Sync', value: formatPercent(nodeStatus.data.syncPercent) },
-    ];
-  }, [displayStatus, nodeStatus]);
+    return rows;
+  }, [displayStatus, nodeSettings.nodeApiUrl, nodeStatus]);
+
+  async function handleTestConnection() {
+    setIsTesting(true);
+    setConfigMessage(null);
+
+    try {
+      const result = await window.qortiumHome.node.testConnection(getNodeSettingsRequest(mode, customUrl));
+
+      setConfigMessage({
+        kind: result.ok ? 'success' : 'error',
+        text: result.ok ? `Connected to ${result.nodeApiUrl}.` : result.message,
+      });
+    } catch (error) {
+      setConfigMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSaving(true);
+    setConfigMessage(null);
+
+    try {
+      const settings = await onSaveNodeSettings(getNodeSettingsRequest(mode, customUrl));
+
+      setConfigMessage({
+        kind: 'success',
+        text: `Using ${settings.nodeApiUrl}.`,
+      });
+    } catch (error) {
+      setConfigMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   const Icon = displayStatus === 'Unavailable' ? WifiOff : Server;
 
@@ -150,7 +230,7 @@ export function NodeStatusButton() {
       className="node-status"
       contentClassName="node-status__popover"
       contentId={popoverId}
-      contentLabel="Node status details"
+      contentLabel="Node status and settings"
       renderTrigger={({ contentId, isOpen, toggle }) => (
         <button
           type="button"
@@ -166,14 +246,77 @@ export function NodeStatusButton() {
         </button>
       )}
     >
-      <dl className="detail-list">
-        {detailRows.map((row) => (
-          <div className="detail-list__row" key={row.label}>
-            <dt className="detail-list__label">{row.label}</dt>
-            <dd className="detail-list__value">{row.value}</dd>
+      <div className="node-status__content">
+        <dl className="detail-list">
+          {detailRows.map((row) => (
+            <div className="detail-list__row" key={row.label}>
+              <dt className="detail-list__label">{row.label}</dt>
+              <dd className="detail-list__value">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <form className="node-status__settings" onSubmit={handleSave}>
+          <label className="field">
+            <span className="field__label">Node</span>
+            <select
+              className="field__input"
+              value={mode}
+              onChange={(event) => {
+                setMode(event.target.value as QortiumNodeSettingsMode);
+                setConfigMessage(null);
+              }}
+            >
+              <option value="previewnet">Qortium Previewnet</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+
+          {mode === 'custom' ? (
+            <label className="field">
+              <span className="field__label">Custom URL</span>
+              <input
+                className="field__input"
+                placeholder="http://127.0.0.1:24891"
+                spellCheck={false}
+                type="text"
+                value={customUrl}
+                onChange={(event) => {
+                  setCustomUrl(event.target.value);
+                  setConfigMessage(null);
+                }}
+              />
+            </label>
+          ) : (
+            <p className="node-status__preset">
+              <span>Previewnet</span>
+              <span>{nodeSettings.previewnetUrl}</span>
+            </p>
+          )}
+
+          <div className="node-status__settings-actions">
+            <button
+              className="button button--secondary"
+              disabled={isSaving || isTesting}
+              type="button"
+              onClick={handleTestConnection}
+            >
+              <RefreshCw aria-hidden="true" size={18} strokeWidth={2} />
+              {isTesting ? 'Testing' : 'Test'}
+            </button>
+            <button className="button" disabled={isSaving || isTesting} type="submit">
+              <Check aria-hidden="true" size={18} strokeWidth={2} />
+              {isSaving ? 'Saving' : 'Save'}
+            </button>
           </div>
-        ))}
-      </dl>
+
+          {configMessage ? (
+            <p className={`node-status__message node-status__message--${configMessage.kind}`}>
+              {configMessage.text}
+            </p>
+          ) : null}
+        </form>
+      </div>
     </Popover>
   );
 }

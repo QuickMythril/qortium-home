@@ -1,5 +1,3 @@
-export const NODE_API_URL = 'http://127.0.0.1:24891';
-
 export const PUBLIC_QDN_SERVICES = [
   'APP',
   'WEBSITE',
@@ -186,6 +184,10 @@ function encodeDisplayPath(path: string) {
   return path.startsWith('?') ? `/${path}` : `/${path}`;
 }
 
+function getNodeApiUrlBase(nodeApiUrl: string) {
+  return nodeApiUrl.replace(/\/+$/, '');
+}
+
 export function isQdnService(value: string): value is QdnService {
   return PUBLIC_QDN_SERVICES.includes(value as QdnService);
 }
@@ -370,24 +372,24 @@ export function getQdnResourceKey(resource: QdnResource) {
   return `${resource.service}:${resource.name}:${resource.identifier ?? 'default'}:${resource.path}`;
 }
 
-export function buildQdnStatusUrl(resource: QdnResource, build = false) {
+export function buildQdnStatusUrl(resource: QdnResource, nodeApiUrl: string, build = false) {
   const identifierPath = resource.identifier ? `/${encodeURIComponent(resource.identifier)}` : '';
   const query = build ? '?build=true' : '';
 
-  return `${NODE_API_URL}/arbitrary/resource/status/${resource.service}/${encodeURIComponent(
+  return `${getNodeApiUrlBase(nodeApiUrl)}/arbitrary/resource/status/${resource.service}/${encodeURIComponent(
     resource.name,
   )}${identifierPath}${query}`;
 }
 
-export function buildQdnDownloadUrl(resource: QdnResource) {
+export function buildQdnDownloadUrl(resource: QdnResource, nodeApiUrl: string) {
   const identifierPath = resource.identifier ? `/${encodeURIComponent(resource.identifier)}` : '';
 
-  return `${NODE_API_URL}/arbitrary/${resource.service}/${encodeURIComponent(
+  return `${getNodeApiUrlBase(nodeApiUrl)}/arbitrary/${resource.service}/${encodeURIComponent(
     resource.name,
   )}${identifierPath}?async=true`;
 }
 
-export function buildQdnRawResourceUrl(resource: QdnResource, attachment = false) {
+export function buildQdnRawResourceUrl(resource: QdnResource, nodeApiUrl: string, attachment = false) {
   const identifierPath = resource.identifier ? `/${encodeURIComponent(resource.identifier)}` : '';
   const { pathOnly, queryString } = splitPathAndQuery(resource.path);
   const queryParams = new URLSearchParams(queryString);
@@ -402,13 +404,14 @@ export function buildQdnRawResourceUrl(resource: QdnResource, attachment = false
 
   const rawQueryString = queryParams.toString();
 
-  return `${NODE_API_URL}/arbitrary/${resource.service}/${encodeURIComponent(resource.name)}${identifierPath}${
+  return `${getNodeApiUrlBase(nodeApiUrl)}/arbitrary/${resource.service}/${encodeURIComponent(resource.name)}${identifierPath}${
     rawQueryString ? `?${rawQueryString}` : ''
   }`;
 }
 
 export function buildQdnResourcesSearchUrl(
   route: Extract<QdnExplorerRoute, { kind: 'service' | 'name' | 'name-services' }>,
+  nodeApiUrl: string,
 ) {
   const queryParams = new URLSearchParams({
     mode: 'ALL',
@@ -426,10 +429,10 @@ export function buildQdnResourcesSearchUrl(
     queryParams.set('exactmatchnames', 'true');
   }
 
-  return `${NODE_API_URL}/arbitrary/resources/search?${queryParams.toString()}`;
+  return `${getNodeApiUrlBase(nodeApiUrl)}/arbitrary/resources/search?${queryParams.toString()}`;
 }
 
-export function buildQdnServiceAvailabilitySearchUrl(service: QdnService) {
+export function buildQdnServiceAvailabilitySearchUrl(service: QdnService, nodeApiUrl: string) {
   const queryParams = new URLSearchParams({
     service,
     mode: 'ALL',
@@ -438,16 +441,16 @@ export function buildQdnServiceAvailabilitySearchUrl(service: QdnService) {
     includemetadata: 'false',
   });
 
-  return `${NODE_API_URL}/arbitrary/resources/search?${queryParams.toString()}`;
+  return `${getNodeApiUrlBase(nodeApiUrl)}/arbitrary/resources/search?${queryParams.toString()}`;
 }
 
-export function buildQdnResourcePropertiesUrl(resource: QdnResource) {
-  return `${NODE_API_URL}/arbitrary/resource/properties/${resource.service}/${encodeURIComponent(
+export function buildQdnResourcePropertiesUrl(resource: QdnResource, nodeApiUrl: string) {
+  return `${getNodeApiUrlBase(nodeApiUrl)}/arbitrary/resource/properties/${resource.service}/${encodeURIComponent(
     resource.name,
   )}/${encodeURIComponent(resource.identifier ?? 'default')}`;
 }
 
-export function buildQdnRenderUrl(resource: QdnResource) {
+export function buildQdnRenderUrl(resource: QdnResource, nodeApiUrl: string) {
   const { pathOnly, queryString } = splitPathAndQuery(resource.path);
   const encodedPath = encodePath(pathOnly);
   const pathSuffix = encodedPath ? `/${encodedPath}` : '';
@@ -459,7 +462,7 @@ export function buildQdnRenderUrl(resource: QdnResource) {
 
   const renderQueryString = queryParams.toString();
 
-  return `${NODE_API_URL}/render/${resource.service}/${encodeURIComponent(resource.name)}${pathSuffix}${
+  return `${getNodeApiUrlBase(nodeApiUrl)}/render/${resource.service}/${encodeURIComponent(resource.name)}${pathSuffix}${
     renderQueryString ? `?${renderQueryString}` : ''
   }`;
 }

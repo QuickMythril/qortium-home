@@ -1,5 +1,5 @@
 import type { QdnRoute } from './qdn';
-import { NODE_API_URL, parseQdnUrl } from './qdn';
+import { parseQdnUrl } from './qdn';
 
 export type NodeApiRoute = {
   displayUrl: string;
@@ -29,12 +29,12 @@ function buildNodeApiRoute(path: string, displayUrl = path): NodeApiRoute {
   };
 }
 
-function getCurrentNodeUrl() {
-  return new URL(NODE_API_URL);
+function getCurrentNodeUrl(nodeApiUrl: string) {
+  return new URL(nodeApiUrl);
 }
 
-function isCurrentNodeUrl(url: URL) {
-  const currentNodeUrl = getCurrentNodeUrl();
+function isCurrentNodeUrl(url: URL, nodeApiUrl: string) {
+  const currentNodeUrl = getCurrentNodeUrl(nodeApiUrl);
   const bothLocal =
     LOCAL_NODE_HOSTNAMES.has(url.hostname) && LOCAL_NODE_HOSTNAMES.has(currentNodeUrl.hostname);
 
@@ -45,7 +45,7 @@ function isCurrentNodeUrl(url: URL) {
   );
 }
 
-function parseNodeApiAddress(input: string): RouteParseResult | undefined {
+function parseNodeApiAddress(input: string, nodeApiUrl: string): RouteParseResult | undefined {
   if (input.startsWith('//')) {
     return {
       success: false,
@@ -75,10 +75,10 @@ function parseNodeApiAddress(input: string): RouteParseResult | undefined {
     };
   }
 
-  if (!isCurrentNodeUrl(url)) {
+  if (!isCurrentNodeUrl(url, nodeApiUrl)) {
     return {
       success: false,
-      message: `Only ${NODE_API_URL} API URLs can be loaded right now.`,
+      message: `Only ${nodeApiUrl} API URLs can be loaded right now.`,
     };
   }
 
@@ -88,14 +88,14 @@ function parseNodeApiAddress(input: string): RouteParseResult | undefined {
   };
 }
 
-export function parseAppAddress(value: string): RouteParseResult {
+export function parseAppAddress(value: string, nodeApiUrl: string): RouteParseResult {
   const input = value.trim();
 
   if (!input || /^qdn:\/\//i.test(input)) {
     return parseQdnUrl(input);
   }
 
-  const nodeApiRoute = parseNodeApiAddress(input);
+  const nodeApiRoute = parseNodeApiAddress(input, nodeApiUrl);
 
   if (nodeApiRoute) {
     return nodeApiRoute;

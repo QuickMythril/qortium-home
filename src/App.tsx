@@ -1,5 +1,5 @@
 import './styles.css';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AccountsPanel } from './AccountsPanel';
 import { ApiViewer } from './ApiViewer';
 import { QdnExplorer } from './QdnExplorer';
@@ -13,6 +13,8 @@ type RouteHistoryState = {
 };
 
 export function App() {
+  const [nodeSettings, setNodeSettings] = useState<QortiumNodeSettings | null>(null);
+  const [nodeSettingsError, setNodeSettingsError] = useState('');
   const [routeHistory, setRouteHistory] = useState<RouteHistoryState>({
     entries: [null],
     index: 0,
@@ -21,6 +23,39 @@ export function App() {
   const isViewerRoute = currentRoute !== null;
   const canGoBack = routeHistory.index > 0;
   const canGoForward = routeHistory.index < routeHistory.entries.length - 1;
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    async function loadNodeSettings() {
+      try {
+        const settings = await window.qortiumHome.node.getSettings();
+
+        if (!isDisposed) {
+          setNodeSettings(settings);
+          setNodeSettingsError('');
+        }
+      } catch (error) {
+        if (!isDisposed) {
+          setNodeSettingsError(error instanceof Error ? error.message : 'Unable to load node settings.');
+        }
+      }
+    }
+
+    void loadNodeSettings();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, []);
+
+  async function saveNodeSettings(request: QortiumNodeSettingsRequest) {
+    const settings = await window.qortiumHome.node.saveSettings(request);
+
+    setNodeSettings(settings);
+
+    return settings;
+  }
 
   function navigateToRoute(route: AppRoute) {
     setRouteHistory((currentHistory) => {
@@ -60,6 +95,21 @@ export function App() {
     }));
   }
 
+  if (!nodeSettings) {
+    return (
+      <main className="app-shell">
+        <section className="app-main" aria-label="Qortium Home">
+          <div className="home-content">
+            <h1>Qortium Home</h1>
+            <p className={`app-message${nodeSettingsError ? ' app-message--error' : ''}`}>
+              {nodeSettingsError || 'Loading node settings'}
+            </p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <TopBar
@@ -72,6 +122,8 @@ export function App() {
         onGoForward={goForward}
         onGoToHistoryIndex={goToHistoryIndex}
         onNavigate={navigateToRoute}
+        onSaveNodeSettings={saveNodeSettings}
+        nodeSettings={nodeSettings}
       />
       <section
         className={`app-main${isViewerRoute ? ' app-main--viewer' : ''}`}
@@ -80,9 +132,9 @@ export function App() {
         {currentRoute?.kind === 'node-api' ? (
           <ApiViewer route={currentRoute} />
         ) : currentRoute?.kind === 'resource' ? (
-          <QdnViewer resource={currentRoute.resource} />
+          <QdnViewer nodeApiUrl={nodeSettings.nodeApiUrl} resource={currentRoute.resource} />
         ) : currentRoute ? (
-          <QdnExplorer route={currentRoute} onNavigate={navigateToRoute} />
+          <QdnExplorer nodeApiUrl={nodeSettings.nodeApiUrl} route={currentRoute} onNavigate={navigateToRoute} />
         ) : (
           <div className="home-content">
             <h1>Qortium Home</h1>

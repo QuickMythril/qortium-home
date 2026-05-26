@@ -13,6 +13,7 @@ import {
 } from './qdn';
 
 type QdnExplorerProps = {
+  nodeApiUrl: string;
   onNavigate: (route: QdnRoute) => void;
   route: QdnExplorerRoute;
 };
@@ -193,7 +194,13 @@ function formatResourceMeta(resource: QdnResourceListItem) {
     .join(', ');
 }
 
-function QdnImageResourcePreview({ resource }: { resource: QdnResourceListItem }) {
+function QdnImageResourcePreview({
+  nodeApiUrl,
+  resource,
+}: {
+  nodeApiUrl: string;
+  resource: QdnResourceListItem;
+}) {
   const [state, setState] = useState<QdnImagePreviewState>({
     phase: 'loading',
   });
@@ -223,7 +230,7 @@ function QdnImageResourcePreview({ resource }: { resource: QdnResourceListItem }
         if (!isDisposed) {
           setState({
             phase: 'ready',
-            url: buildQdnRenderUrl(route.resource),
+            url: buildQdnRenderUrl(route.resource, nodeApiUrl),
           });
         }
       } catch {
@@ -240,7 +247,7 @@ function QdnImageResourcePreview({ resource }: { resource: QdnResourceListItem }
     return () => {
       isDisposed = true;
     };
-  }, [identifier, resource.name, resource.service]);
+  }, [identifier, nodeApiUrl, resource.name, resource.service]);
 
   if (state.phase !== 'ready') {
     return fallbackIcon;
@@ -263,7 +270,7 @@ function QdnImageResourcePreview({ resource }: { resource: QdnResourceListItem }
   );
 }
 
-export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
+export function QdnExplorer({ nodeApiUrl, onNavigate, route }: QdnExplorerProps) {
   const [state, setState] = useState<QdnExplorerState>({
     phase: 'idle',
     resources: [],
@@ -478,7 +485,7 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
                   const rowContent = (
                     <>
                       {isImageResource ? (
-                        <QdnImageResourcePreview resource={resource} />
+                        <QdnImageResourcePreview nodeApiUrl={nodeApiUrl} resource={resource} />
                       ) : (
                         <FileText aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
                       )}
