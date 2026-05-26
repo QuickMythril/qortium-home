@@ -16,6 +16,9 @@
     "dist:linux:x64": "npm run build && electron-builder --linux AppImage --x64",
     "dist:linux:arm64": "npm run build && electron-builder --linux AppImage --arm64",
     "dist:linux:all": "npm run build && electron-builder --linux AppImage --x64 --arm64",
+    "dist:mac:x64": "npm run build && electron-builder --mac dmg --x64 --publish never",
+    "dist:mac:arm64": "npm run build && electron-builder --mac dmg --arm64 --publish never",
+    "dist:mac:universal": "npm run build && electron-builder --mac dmg --universal --publish never",
     "dist:win:x64": "npm run build && electron-builder --win portable --x64 --publish never",
     "qdn:bootstrap-test-data": "node scripts/bootstrap-qdn-test-data.mjs",
     "preview": "vite preview"
@@ -81,6 +84,16 @@
       ],
       "category": "Network",
       "executableName": "qortium-home"
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg"
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "identity": null
     },
     "win": {
       "icon": "build/icon.ico",

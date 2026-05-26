@@ -43,7 +43,7 @@ more broadly.
 - Choose a separate selected wallet for each tab before navigating.
 - Show the active tab's selected wallet as an avatar or initial in the top bar.
 - Use in-session Back and Forward navigation history.
-- Build Linux x64 and arm64 AppImages and a Windows x64 portable executable.
+- Build Linux x64 and arm64 AppImages, macOS DMGs, and a Windows x64 portable executable.
 - Package Linux, Windows, and macOS build resources with the Qortium Home app icon.
 
 ## Planned Work
@@ -52,7 +52,7 @@ more broadly.
 - `qdnRequest` support with approval prompts for account access and signing.
 - Service-specific viewers for more QDN service types.
 - Qortium Core download, setup, and local start/status management.
-- macOS DMG and Android APK packaging.
+- Android APK packaging.
 - Code signing and release verification for production builds.
 
 ## Development Setup
@@ -101,6 +101,24 @@ Build both Linux AppImage targets:
 npm run dist:linux:all
 ```
 
+Build a macOS x64 DMG on macOS:
+
+```sh
+npm run dist:mac:x64
+```
+
+Build a macOS arm64 DMG on macOS:
+
+```sh
+npm run dist:mac:arm64
+```
+
+Build a universal macOS DMG on macOS:
+
+```sh
+npm run dist:mac:universal
+```
+
 Build a Windows x64 portable executable:
 
 ```sh
@@ -113,8 +131,9 @@ not be committed to git.
 The current Windows executable is a portable self-extracting build, not an
 installer. It is unsigned and may show Windows SmartScreen warnings.
 
-A macOS icon is tracked at `build/icon.icns` for the upcoming DMG packaging
-setup. The DMG build itself should be configured and tested on macOS.
+The current macOS DMG builds are unsigned and should be built on macOS. Local
+test builds may require opening from Finder's right-click menu or approving the
+app in macOS privacy and security settings.
 
 ## QDN Preview Test Data
 

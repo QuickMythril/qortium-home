@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-26 - build: add mac dmg target
+
+Added first-pass macOS DMG packaging for Qortium Home. The build configuration now uses the tracked macOS icon, adds unsigned x64, arm64, and universal DMG commands for native macOS testing, and documents the expected local Gatekeeper warnings for early unsigned builds.
+
 ### 2026-05-26 - build: add mac icon
 
 Added a tracked macOS `.icns` version of the Qortium Home app icon, generated from the existing icon source so the upcoming macOS DMG setup can use the proper native icon without requiring a separate manual icon conversion step.

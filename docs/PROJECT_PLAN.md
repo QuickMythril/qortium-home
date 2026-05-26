@@ -69,7 +69,7 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
 - Target distributable builds:
   - Linux AppImage for x64.
   - Linux AppImage for arm64, wired as a separate electron-builder script.
-  - macOS DMG.
+  - macOS DMG, wired as separate x64, arm64, and universal electron-builder scripts.
   - Windows EXE.
   - Android APK.
 - Linux, Windows, and macOS desktop builds should use the Qortium Home app icon from tracked build resources.
