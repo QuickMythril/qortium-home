@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -239,6 +239,22 @@ function getSuggestedFilename(request: QdnRawResourceRequest, resource: QdnResou
   return sanitizeFilename(`${resource.service}_${resource.name}_${resource.identifier ?? 'default'}`);
 }
 
+function getAppPath(name: Parameters<typeof app.getPath>[0]) {
+  try {
+    return app.getPath(name);
+  } catch {
+    return '';
+  }
+}
+
+function getDefaultDownloadPath(filename: string) {
+  const documentsPath = getAppPath('documents');
+  const homePath = getAppPath('home');
+  const basePath = documentsPath && existsSync(documentsPath) ? documentsPath : homePath;
+
+  return path.join(basePath || process.cwd(), filename);
+}
+
 function getNodeApiPath(value: unknown, nodeApiUrl: string) {
   const apiPath = getString(value);
 
@@ -473,7 +489,7 @@ export function registerQdnIpcHandlers() {
     const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
     const saveDialogOptions = {
       title: 'Save QDN Resource',
-      defaultPath: getSuggestedFilename(request, resource),
+      defaultPath: getDefaultDownloadPath(getSuggestedFilename(request, resource)),
     };
     const result = parentWindow
       ? await dialog.showSaveDialog(parentWindow, saveDialogOptions)
