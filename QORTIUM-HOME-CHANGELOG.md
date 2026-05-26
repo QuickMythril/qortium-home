@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-26 - release: bump app version to 1.0.0
+
+Changed the Qortium Home package version from `0.1.0` to `1.0.0` before the first public release so generated desktop artifacts use the reset 1.0.0 version line and avoid pre-1.0 macOS packaging issues.
+
 ### 2026-05-26 - build: add mac dmg target
 
 Added first-pass macOS DMG packaging for Qortium Home. The build configuration now uses the tracked macOS icon, adds unsigned x64, arm64, and universal DMG commands for native macOS testing, and documents the expected local Gatekeeper warnings for early unsigned builds.
