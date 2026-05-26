@@ -40,6 +40,43 @@ type QortiumQdnAuthorizeResult = {
   nodeApiUrl: string;
 };
 
+type QortiumQdnRawResourceRequest = QortiumQdnAuthorizeRequest & {
+  maxBytes?: number;
+  path?: string;
+  suggestedFilename?: string;
+};
+
+type QortiumQdnResourcesSearchRequest = {
+  exactMatchNames?: boolean;
+  includeMetadata?: boolean;
+  includeStatus?: boolean;
+  limit?: number;
+  name?: string;
+  service?: string;
+};
+
+type QortiumQdnTextResult =
+  | {
+      content: string;
+      contentLength?: number;
+      contentType?: string;
+      tooLarge: false;
+    }
+  | {
+      contentLength?: number;
+      contentType?: string;
+      tooLarge: true;
+    };
+
+type QortiumQdnDownloadResult =
+  | {
+      canceled: true;
+    }
+  | {
+      canceled: false;
+      filePath: string;
+    };
+
 interface Window {
   qortiumHome: {
     accounts: {
@@ -58,6 +95,15 @@ interface Window {
       authorizeResource: (
         request: QortiumQdnAuthorizeRequest,
       ) => Promise<QortiumQdnAuthorizeResult>;
+      listResources: (
+        request: QortiumQdnResourcesSearchRequest,
+      ) => Promise<unknown>;
+      fetchResourceText: (
+        request: QortiumQdnRawResourceRequest,
+      ) => Promise<QortiumQdnTextResult>;
+      downloadResource: (
+        request: QortiumQdnRawResourceRequest,
+      ) => Promise<QortiumQdnDownloadResult>;
     };
   };
 }

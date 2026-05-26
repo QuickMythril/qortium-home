@@ -21,5 +21,27 @@ contextBridge.exposeInMainWorld('qortiumHome', {
   qdn: {
     authorizeResource: (request: { identifier?: string; name: string; service: string }) =>
       ipcRenderer.invoke('qdn:authorizeResource', request),
+    listResources: (request: {
+      exactMatchNames?: boolean;
+      includeMetadata?: boolean;
+      includeStatus?: boolean;
+      limit?: number;
+      name?: string;
+      service?: string;
+    }) => ipcRenderer.invoke('qdn:listResources', request),
+    fetchResourceText: (request: {
+      identifier?: string;
+      maxBytes?: number;
+      name: string;
+      path?: string;
+      service: string;
+    }) => ipcRenderer.invoke('qdn:fetchResourceText', request),
+    downloadResource: (request: {
+      identifier?: string;
+      name: string;
+      path?: string;
+      service: string;
+      suggestedFilename?: string;
+    }) => ipcRenderer.invoke('qdn:downloadResource', request),
   },
 });

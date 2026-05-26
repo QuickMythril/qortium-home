@@ -6,6 +6,8 @@ const DEFAULT_NODE_API_URL = 'http://127.0.0.1:62391';
 const DEFAULT_NAME = 'QortiumHomeTest';
 const APP_IDENTIFIER = 'home-test';
 const IMAGE_IDENTIFIER = 'home-image';
+const JSON_IDENTIFIER = 'home-json';
+const FILE_IDENTIFIER = 'home-file';
 const POLL_INTERVAL_MS = 5_000;
 const POLL_TIMEOUT_MS = 180_000;
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -324,6 +326,8 @@ function createFixtureFiles() {
   const appDirectory = path.join(fixtureRoot, 'app');
   const websiteDirectory = path.join(fixtureRoot, 'website');
   const imagePath = path.join(fixtureRoot, 'qortium-home-test-image.svg');
+  const jsonPath = path.join(fixtureRoot, 'qortium-home-test.json');
+  const filePath = path.join(fixtureRoot, 'qortium-home-test-file.txt');
 
   mkdirSync(appDirectory);
   mkdirSync(websiteDirectory);
@@ -437,10 +441,46 @@ function createFixtureFiles() {
     'utf8',
   );
 
+  writeFileSync(
+    jsonPath,
+    `${JSON.stringify(
+      {
+        app: 'Qortium Home',
+        fixture: 'JSON',
+        name: testName,
+        resource: `qdn://JSON/${testName}/${JSON_IDENTIFIER}`,
+        publishedAt: new Date().toISOString(),
+        status: {
+          purpose: 'Test the QDN text viewer',
+          temporary: true,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  writeFileSync(
+    filePath,
+    [
+      'Qortium Home FILE Test',
+      '',
+      `Resource: qdn://FILE/${testName}/${FILE_IDENTIFIER}`,
+      `Published: ${new Date().toISOString()}`,
+      '',
+      'This fixture is intentionally small and exists to test the QDN download/details viewer.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
   return {
     appDirectory,
+    filePath,
     fixtureRoot,
     imagePath,
+    jsonPath,
     websiteDirectory,
   };
 }
@@ -541,15 +581,33 @@ try {
     title: 'Qortium Home IMAGE Test',
     description: 'Temporary Qortium Home QDN browser test image',
   });
+  await publishResource({
+    service: 'JSON',
+    identifier: JSON_IDENTIFIER,
+    path: fixtures.jsonPath,
+    title: 'Qortium Home JSON Test',
+    description: 'Temporary Qortium Home QDN browser text-viewer test data',
+  });
+  await publishResource({
+    service: 'FILE',
+    identifier: FILE_IDENTIFIER,
+    path: fixtures.filePath,
+    title: 'Qortium Home FILE Test',
+    description: 'Temporary Qortium Home QDN browser download-viewer test file',
+  });
 
   await waitForResourceReady('APP', APP_IDENTIFIER);
   await waitForResourceReady('WEBSITE');
   await waitForResourceReady('IMAGE', IMAGE_IDENTIFIER);
+  await waitForResourceReady('JSON', JSON_IDENTIFIER);
+  await waitForResourceReady('FILE', FILE_IDENTIFIER);
 
   console.log('QDN test data bootstrap complete.');
   console.log(`APP: qdn://APP/${testName}/${APP_IDENTIFIER}`);
   console.log(`WEBSITE: qdn://WEBSITE/${testName}/default`);
   console.log(`IMAGE: qdn://IMAGE/${testName}/${IMAGE_IDENTIFIER}`);
+  console.log(`JSON: qdn://JSON/${testName}/${JSON_IDENTIFIER}`);
+  console.log(`FILE: qdn://FILE/${testName}/${FILE_IDENTIFIER}`);
 } finally {
   rmSync(fixtures.fixtureRoot, { recursive: true, force: true });
 }

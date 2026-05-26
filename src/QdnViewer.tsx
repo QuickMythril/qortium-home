@@ -1,9 +1,8 @@
-import { RefreshCw } from 'lucide-react';
+import { Copy, Download, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { QdnResource, QdnResourceProperties, QdnResourceStatus, QdnViewerKind } from './qdn';
 import {
   buildQdnDownloadUrl,
-  buildQdnRawResourceUrl,
   buildQdnRenderUrl,
   buildQdnResourcePropertiesUrl,
   buildQdnStatusUrl,
@@ -14,10 +13,10 @@ import {
 } from './qdn';
 
 const STATUS_POLL_INTERVAL_MS = 5_000;
+const TEXT_PREVIEW_MAX_BYTES = 1_048_576;
 
 type LoadedQdnResource = {
   properties?: QdnResourceProperties;
-  rawUrl: string;
   renderUrl: string;
   status: QdnResourceStatus;
   viewerKind: QdnViewerKind;
@@ -43,6 +42,24 @@ type QdnViewerState =
 type QdnViewerProps = {
   resource: QdnResource;
 };
+
+type TextPreviewState =
+  | {
+      phase: 'loading';
+    }
+  | {
+      content: string;
+      label: string;
+      phase: 'ready';
+    }
+  | {
+      message: string;
+      phase: 'too-large';
+    }
+  | {
+      message: string;
+      phase: 'error';
+    };
 
 function formatError(error: unknown) {
   if (!(error instanceof Error)) {
@@ -107,6 +124,58 @@ function formatBytes(bytes: number | undefined) {
   }
 
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unitIndex]}`;
+}
+
+function formatTextPreviewLimit() {
+  return formatBytes(TEXT_PREVIEW_MAX_BYTES) || '1 MB';
+}
+
+function shouldFormatJson(resource: QdnResource, mimeType: string) {
+  return (
+    resource.service === 'JSON' ||
+    resource.service === 'METADATA' ||
+    resource.service === 'LIST' ||
+    /\bjson\b/i.test(mimeType)
+  );
+}
+
+function getTextPreviewLabel(resource: QdnResource, mimeType: string, formattedAsJson: boolean) {
+  if (formattedAsJson) {
+    return 'JSON';
+  }
+
+  if (resource.service === 'CODE') {
+    return 'Code';
+  }
+
+  if (mimeType) {
+    return mimeType.split(';')[0] || 'Text';
+  }
+
+  return 'Text';
+}
+
+async function writeClipboardText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = value;
+  textArea.style.position = 'fixed';
+  textArea.style.opacity = '0';
+  document.body.append(textArea);
+  textArea.focus();
+  textArea.select();
+
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('Clipboard copy was not available.');
+    }
+  } finally {
+    textArea.remove();
+  }
 }
 
 async function readStatus(response: Response) {
@@ -220,9 +289,8 @@ function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
     async function setReadyState(status: QdnResourceStatus) {
       const viewerKind = getQdnViewerKind(resource.service);
       const renderUrl = buildQdnRenderUrl(resource);
-      const rawUrl = buildQdnRawResourceUrl(resource);
 
-      if (viewerKind !== 'unsupported') {
+      if (viewerKind === 'iframe' || viewerKind === 'image') {
         await verifyRenderUrl(renderUrl, abortController.signal);
       }
 
@@ -233,7 +301,6 @@ function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
         status,
         loadedResource: {
           properties,
-          rawUrl,
           renderUrl,
           status,
           viewerKind,
@@ -324,6 +391,354 @@ function useQdnResourceLoader(resource: QdnResource, retryToken: number) {
   return state;
 }
 
+function CopyButton({
+  className,
+  disabled,
+  label,
+  value,
+}: {
+  className?: string;
+  disabled?: boolean;
+  label: string;
+  value: string;
+}) {
+  const [copyState, setCopyState] = useState<'copied' | 'error' | 'idle'>('idle');
+  const buttonLabel = copyState === 'copied' ? 'Copied' : copyState === 'error' ? 'Copy failed' : label;
+
+  useEffect(() => {
+    if (copyState === 'idle') {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setCopyState('idle'), 1_600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [copyState]);
+
+  return (
+    <button
+      className={`button button--secondary${className ? ` ${className}` : ''}`}
+      type="button"
+      disabled={disabled}
+      onClick={async () => {
+        try {
+          await writeClipboardText(value);
+          setCopyState('copied');
+        } catch {
+          setCopyState('error');
+        }
+      }}
+    >
+      <Copy aria-hidden="true" size={18} strokeWidth={2} />
+      {buttonLabel}
+    </button>
+  );
+}
+
+function getSuggestedResourceFilename(resource: QdnResource, properties: QdnResourceProperties | undefined) {
+  if (properties?.filename) {
+    return properties.filename;
+  }
+
+  const identifier = resource.identifier || 'default';
+  const suffix = resource.path.split('/').filter(Boolean).at(-1)?.split('?')[0] || '';
+
+  return suffix || `${resource.service}_${resource.name}_${identifier}`;
+}
+
+function QdnDownloadButton({
+  loadedResource,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  resource: QdnResource;
+}) {
+  const [downloadState, setDownloadState] = useState<'error' | 'idle' | 'saved' | 'saving'>('idle');
+  const buttonLabel =
+    downloadState === 'saving'
+      ? 'Saving'
+      : downloadState === 'saved'
+        ? 'Saved'
+        : downloadState === 'error'
+          ? 'Save failed'
+          : 'Download';
+
+  useEffect(() => {
+    if (downloadState !== 'saved' && downloadState !== 'error') {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setDownloadState('idle'), 1_800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [downloadState]);
+
+  return (
+    <button
+      className="button qdn-viewer__action-button"
+      type="button"
+      disabled={downloadState === 'saving'}
+      onClick={async () => {
+        setDownloadState('saving');
+
+        try {
+          const result = await window.qortiumHome.qdn.downloadResource({
+            service: resource.service,
+            name: resource.name,
+            identifier: resource.identifier,
+            path: resource.path,
+            suggestedFilename: getSuggestedResourceFilename(resource, loadedResource.properties),
+          });
+
+          setDownloadState(result.canceled ? 'idle' : 'saved');
+        } catch {
+          setDownloadState('error');
+        }
+      }}
+    >
+      <Download aria-hidden="true" size={18} strokeWidth={2} />
+      {buttonLabel}
+    </button>
+  );
+}
+
+function QdnResourceActions({
+  loadedResource,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  resource: QdnResource;
+}) {
+  return (
+    <div className="qdn-viewer__actions">
+      <QdnDownloadButton loadedResource={loadedResource} resource={resource} />
+      <CopyButton label="Copy QDN URL" value={resource.displayUrl} />
+    </div>
+  );
+}
+
+async function readTextPreview({
+  loadedResource,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  resource: QdnResource;
+}): Promise<TextPreviewState> {
+  const knownSize = loadedResource.properties?.size;
+
+  if (typeof knownSize === 'number' && knownSize > TEXT_PREVIEW_MAX_BYTES) {
+    return {
+      phase: 'too-large',
+      message: `This resource is ${formatBytes(knownSize)}, so it is too large to preview inline. The inline preview limit is ${formatTextPreviewLimit()}.`,
+    };
+  }
+
+  const result = await window.qortiumHome.qdn.fetchResourceText({
+    service: resource.service,
+    name: resource.name,
+    identifier: resource.identifier,
+    path: resource.path,
+    maxBytes: TEXT_PREVIEW_MAX_BYTES,
+  });
+
+  if (result.tooLarge) {
+    return {
+      phase: 'too-large',
+      message: result.contentLength
+        ? `This resource is ${formatBytes(result.contentLength)}, so it is too large to preview inline. The inline preview limit is ${formatTextPreviewLimit()}.`
+        : `This resource is too large to preview inline. The inline preview limit is ${formatTextPreviewLimit()}.`,
+    };
+  }
+
+  const rawContent = result.content;
+  const mimeType = loadedResource.properties?.mimeType || result.contentType || '';
+  const shouldTryJson = shouldFormatJson(resource, mimeType);
+  let content = rawContent;
+  let formattedAsJson = false;
+
+  if (shouldTryJson) {
+    try {
+      content = JSON.stringify(JSON.parse(rawContent), null, 2);
+      formattedAsJson = true;
+    } catch {
+      formattedAsJson = false;
+    }
+  }
+
+  return {
+    phase: 'ready',
+    content,
+    label: getTextPreviewLabel(resource, mimeType, formattedAsJson),
+  };
+}
+
+function QdnTextContent({
+  loadedResource,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  resource: QdnResource;
+}) {
+  const [state, setState] = useState<TextPreviewState>({
+    phase: 'loading',
+  });
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    setState({
+      phase: 'loading',
+    });
+
+    async function loadTextPreview() {
+      try {
+        const nextState = await readTextPreview({
+          loadedResource,
+          resource,
+        });
+
+        if (!isDisposed) {
+          setState(nextState);
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+
+        if (!isDisposed) {
+          setState({
+            phase: 'error',
+            message: formatError(error),
+          });
+        }
+      }
+    }
+
+    void loadTextPreview();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [loadedResource, resource]);
+
+  const isReady = state.phase === 'ready';
+  const statusText =
+    state.phase === 'loading'
+      ? 'Loading text preview'
+      : state.phase === 'ready'
+        ? state.label
+        : state.phase === 'too-large'
+          ? 'Preview unavailable'
+          : 'Preview failed';
+
+  return (
+    <div className="qdn-viewer__text">
+      <div className="qdn-viewer__text-toolbar">
+        <span className="qdn-viewer__type-label">{statusText}</span>
+        <div className="qdn-viewer__actions">
+          <CopyButton disabled={!isReady} label="Copy text" value={isReady ? state.content : ''} />
+          <QdnDownloadButton loadedResource={loadedResource} resource={resource} />
+        </div>
+      </div>
+
+      {state.phase === 'loading' ? (
+        <div className="qdn-viewer__empty qdn-viewer__empty--loading">
+          <p className="qdn-viewer__message">Loading text preview</p>
+        </div>
+      ) : null}
+
+      {state.phase === 'ready' ? (
+        <pre className="qdn-viewer__text-content">
+          <code>{state.content}</code>
+        </pre>
+      ) : null}
+
+      {state.phase === 'too-large' || state.phase === 'error' ? (
+        <div className={`qdn-viewer__empty qdn-viewer__empty--${state.phase === 'error' ? 'error' : 'ready'}`}>
+          <div className="qdn-viewer__details">
+            <p className="qdn-viewer__message">{state.message}</p>
+            <QdnResourceActions loadedResource={loadedResource} resource={resource} />
+            <QdnResourceDetailList loadedResource={loadedResource} resource={resource} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function QdnResourceDetailList({
+  loadedResource,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  resource: QdnResource;
+}) {
+  return (
+    <dl className="detail-list qdn-viewer__detail-list">
+      <div className="detail-list__row">
+        <dt className="detail-list__label">Service</dt>
+        <dd className="detail-list__value">{resource.service}</dd>
+      </div>
+      <div className="detail-list__row">
+        <dt className="detail-list__label">Name</dt>
+        <dd className="detail-list__value">{resource.name}</dd>
+      </div>
+      <div className="detail-list__row">
+        <dt className="detail-list__label">Identifier</dt>
+        <dd className="detail-list__value">{resource.identifier || 'default'}</dd>
+      </div>
+      {resource.path ? (
+        <div className="detail-list__row">
+          <dt className="detail-list__label">Path</dt>
+          <dd className="detail-list__value">{resource.path}</dd>
+        </div>
+      ) : null}
+      <div className="detail-list__row">
+        <dt className="detail-list__label">Status</dt>
+        <dd className="detail-list__value">{formatQdnStatus(loadedResource.status)}</dd>
+      </div>
+      {loadedResource.properties?.filename ? (
+        <div className="detail-list__row">
+          <dt className="detail-list__label">File</dt>
+          <dd className="detail-list__value">{loadedResource.properties.filename}</dd>
+        </div>
+      ) : null}
+      {loadedResource.properties?.mimeType ? (
+        <div className="detail-list__row">
+          <dt className="detail-list__label">Type</dt>
+          <dd className="detail-list__value">{loadedResource.properties.mimeType}</dd>
+        </div>
+      ) : null}
+      {loadedResource.properties?.size ? (
+        <div className="detail-list__row">
+          <dt className="detail-list__label">Size</dt>
+          <dd className="detail-list__value">{formatBytes(loadedResource.properties.size)}</dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+function QdnDetailsContent({
+  loadedResource,
+  message,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  message: string;
+  resource: QdnResource;
+}) {
+  return (
+    <div className="qdn-viewer__empty qdn-viewer__empty--ready">
+      <div className="qdn-viewer__details">
+        <p className="qdn-viewer__message">{message}</p>
+        <QdnResourceActions loadedResource={loadedResource} resource={resource} />
+        <QdnResourceDetailList loadedResource={loadedResource} resource={resource} />
+      </div>
+    </div>
+  );
+}
+
 function QdnReadyContent({
   loadedResource,
   resource,
@@ -356,40 +771,26 @@ function QdnReadyContent({
     );
   }
 
+  if (loadedResource.viewerKind === 'text') {
+    return <QdnTextContent loadedResource={loadedResource} resource={resource} />;
+  }
+
+  if (loadedResource.viewerKind === 'download') {
+    return (
+      <QdnDetailsContent
+        loadedResource={loadedResource}
+        message="This resource is ready to download."
+        resource={resource}
+      />
+    );
+  }
+
   return (
-    <div className="qdn-viewer__empty qdn-viewer__empty--ready">
-      <div className="qdn-viewer__details">
-        <p className="qdn-viewer__message">{resource.service} resources do not have a viewer yet.</p>
-        <dl className="detail-list qdn-viewer__detail-list">
-          <div className="detail-list__row">
-            <dt className="detail-list__label">Service</dt>
-            <dd className="detail-list__value">{resource.service}</dd>
-          </div>
-          <div className="detail-list__row">
-            <dt className="detail-list__label">Status</dt>
-            <dd className="detail-list__value">{formatQdnStatus(loadedResource.status)}</dd>
-          </div>
-          {loadedResource.properties?.filename ? (
-            <div className="detail-list__row">
-              <dt className="detail-list__label">File</dt>
-              <dd className="detail-list__value">{loadedResource.properties.filename}</dd>
-            </div>
-          ) : null}
-          {loadedResource.properties?.mimeType ? (
-            <div className="detail-list__row">
-              <dt className="detail-list__label">Type</dt>
-              <dd className="detail-list__value">{loadedResource.properties.mimeType}</dd>
-            </div>
-          ) : null}
-          {loadedResource.properties?.size ? (
-            <div className="detail-list__row">
-              <dt className="detail-list__label">Size</dt>
-              <dd className="detail-list__value">{formatBytes(loadedResource.properties.size)}</dd>
-            </div>
-          ) : null}
-        </dl>
-      </div>
-    </div>
+    <QdnDetailsContent
+      loadedResource={loadedResource}
+      message={`${resource.service} resources do not have a dedicated viewer yet.`}
+      resource={resource}
+    />
   );
 }
 

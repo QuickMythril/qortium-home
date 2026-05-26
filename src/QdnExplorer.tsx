@@ -4,8 +4,6 @@ import type { QdnExplorerRoute, QdnResourceListItem, QdnRoute, QdnService } from
 import {
   PUBLIC_QDN_SERVICES,
   buildQdnRenderUrl,
-  buildQdnServiceAvailabilitySearchUrl,
-  buildQdnResourcesSearchUrl,
   buildQdnRouteFromListItem,
   formatQdnStatus,
   getQdnItemIdentifier,
@@ -65,7 +63,7 @@ function formatError(error: unknown) {
     return 'Unable to load QDN resources.';
   }
 
-  return error.message;
+  return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
 }
 
 function isQdnResourceListItem(value: unknown): value is QdnResourceListItem {
@@ -83,20 +81,36 @@ function isQdnResourceListItem(value: unknown): value is QdnResourceListItem {
   );
 }
 
-async function readResources(response: Response) {
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new Error(text || `QDN resource list request failed with HTTP ${response.status}.`);
-  }
-
-  const data: unknown = JSON.parse(text);
-
+function readResources(data: unknown) {
   if (!Array.isArray(data)) {
     throw new Error('QDN resource list response did not match the expected shape.');
   }
 
   return data.filter(isQdnResourceListItem);
+}
+
+async function loadServiceAvailabilityResources(service: QdnService) {
+  const data = await window.qortiumHome.qdn.listResources({
+    service,
+    limit: 1,
+    includeStatus: false,
+    includeMetadata: false,
+  });
+
+  return readResources(data);
+}
+
+async function loadRouteResources(route: Extract<QdnExplorerRoute, { kind: 'service' | 'name' | 'name-services' }>) {
+  const data = await window.qortiumHome.qdn.listResources({
+    service: route.kind === 'name-services' ? undefined : route.service,
+    name: route.kind === 'service' ? undefined : route.name,
+    exactMatchNames: route.kind !== 'service',
+    limit: 0,
+    includeStatus: true,
+    includeMetadata: true,
+  });
+
+  return readResources(data);
 }
 
 function formatDate(timestamp: number | undefined) {
@@ -259,7 +273,6 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
   const serviceRows = useMemo(() => getServiceRows(state.resources), [state.resources]);
 
   useEffect(() => {
-    const abortController = new AbortController();
     let isDisposed = false;
 
     async function loadResources() {
@@ -271,20 +284,8 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
       try {
         const resources =
           route.kind === 'services'
-            ? (
-                await Promise.all(
-                  PUBLIC_QDN_SERVICES.map(async (service) => {
-                    const response = await fetch(buildQdnServiceAvailabilitySearchUrl(service), {
-                      signal: abortController.signal,
-                    });
-
-                    return readResources(response);
-                  }),
-                )
-              ).flat()
-            : await fetch(buildQdnResourcesSearchUrl(route), {
-                signal: abortController.signal,
-              }).then(readResources);
+            ? (await Promise.all(PUBLIC_QDN_SERVICES.map(loadServiceAvailabilityResources))).flat()
+            : await loadRouteResources(route);
 
         if (!isDisposed) {
           setState({
@@ -311,7 +312,6 @@ export function QdnExplorer({ onNavigate, route }: QdnExplorerProps) {
 
     return () => {
       isDisposed = true;
-      abortController.abort();
     };
   }, [route, retryToken]);
 
