@@ -89,6 +89,18 @@ Build a Linux x64 AppImage:
 npm run dist:linux:x64
 ```
 
+Build a Linux arm64 AppImage:
+
+```sh
+npm run dist:linux:arm64
+```
+
+Build both Linux AppImage targets:
+
+```sh
+npm run dist:linux:all
+```
+
 Build a Windows x64 portable executable:
 
 ```sh

@@ -68,7 +68,7 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
 - Use `~/git/Qortal-Hub` only as a reference, not as the product to clone.
 - Target distributable builds:
   - Linux AppImage for x64.
-  - Linux AppImage for arm64.
+  - Linux AppImage for arm64, wired as a separate electron-builder script.
   - macOS DMG.
   - Windows EXE.
   - Android APK.
