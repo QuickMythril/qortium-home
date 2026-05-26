@@ -72,7 +72,7 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - macOS DMG.
   - Windows EXE.
   - Android APK.
-- Linux and Windows desktop builds should use the Qortium Home app icon from tracked build resources.
+- Linux, Windows, and macOS desktop builds should use the Qortium Home app icon from tracked build resources.
 - Some target artifacts will need to be built or verified on their native systems, but the repo should be set up so each target can be tackled and tested one at a time.
 
 ## Stack Decision

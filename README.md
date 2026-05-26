@@ -43,8 +43,8 @@ more broadly.
 - Choose a separate selected wallet for each tab before navigating.
 - Show the active tab's selected wallet as an avatar or initial in the top bar.
 - Use in-session Back and Forward navigation history.
-- Build a Linux x64 AppImage and a Windows x64 portable executable.
-- Package Linux and Windows builds with the Qortium Home app icon.
+- Build Linux x64 and arm64 AppImages and a Windows x64 portable executable.
+- Package Linux, Windows, and macOS build resources with the Qortium Home app icon.
 
 ## Planned Work
 
@@ -52,7 +52,7 @@ more broadly.
 - `qdnRequest` support with approval prompts for account access and signing.
 - Service-specific viewers for more QDN service types.
 - Qortium Core download, setup, and local start/status management.
-- Linux arm64, macOS DMG, and Android APK packaging.
+- macOS DMG and Android APK packaging.
 - Code signing and release verification for production builds.
 
 ## Development Setup
@@ -112,6 +112,9 @@ not be committed to git.
 
 The current Windows executable is a portable self-extracting build, not an
 installer. It is unsigned and may show Windows SmartScreen warnings.
+
+A macOS icon is tracked at `build/icon.icns` for the upcoming DMG packaging
+setup. The DMG build itself should be configured and tested on macOS.
 
 ## QDN Preview Test Data
 
