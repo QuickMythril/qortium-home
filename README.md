@@ -26,7 +26,7 @@ more broadly.
 - Keep wallets locked after restart and unlocked only for the current session.
 - Select, unlock, lock, and remove saved wallets.
 - Show node status for the configured node.
-- Switch between the Qortium Previewnet node preset and one saved custom node.
+- Switch between a local node, Previewnet network discovery, and one saved custom node.
 - Browse QDN services, names, and resources from `qdn://` URLs.
 - Load `APP` and `WEBSITE` resources in an embedded viewer.
 - Load image-style QDN resources such as `IMAGE`, `THUMBNAIL`, and
@@ -167,10 +167,13 @@ Regenerate Android launcher icons after changing `build/icon-source.png`:
 npm run icons:android
 ```
 
-Android currently connects to an existing node only. The Previewnet preset uses
-`http://10.0.2.2:24891` for emulator testing; physical devices should use a
-custom LAN or remote node URL. Android wallet file creation/loading and QDN file
-downloads are intentionally still desktop-only.
+Android currently connects to existing nodes only. By default it uses Previewnet
+network discovery: it starts from the public seed API URLs, calls `/peers/known`,
+converts discovered peer addresses to candidate API URLs, and uses a reachable
+node for read-only QDN/API browsing. This requires seed nodes to expose public
+read-only API access for `/admin/status` and `/peers/known`. Users can still
+choose a custom LAN or remote node URL. Android wallet file creation/loading and
+QDN file downloads are intentionally still desktop-only.
 
 ## QDN Preview Test Data
 

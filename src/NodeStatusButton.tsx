@@ -16,8 +16,8 @@ type NodeStatusResponse = {
 
 type NodeStatusState =
   | { state: 'loading' }
-  | { data: NodeStatusResponse; state: 'available' }
-  | { message?: string; state: 'unavailable' };
+  | { data: NodeStatusResponse; nodeApiUrl: string; state: 'available' }
+  | { message?: string; nodeApiUrl?: string; state: 'unavailable' };
 
 type DisplayStatus = 'Checking' | 'Minting' | 'Synced' | 'Syncing' | 'Unavailable';
 
@@ -33,6 +33,7 @@ type ConfigMessage = {
 
 type NodeStatusButtonProps = {
   nodeSettings: QortiumNodeSettings;
+  onResolvedNodeApiUrl: (nodeApiUrl: string) => void;
   onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
 };
 
@@ -94,7 +95,11 @@ function getNodeSettingsRequest(mode: QortiumNodeSettingsMode, customUrl: string
   };
 }
 
-export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatusButtonProps) {
+export function NodeStatusButton({
+  nodeSettings,
+  onResolvedNodeApiUrl,
+  onSaveNodeSettings,
+}: NodeStatusButtonProps) {
   const [nodeStatus, setNodeStatus] = useState<NodeStatusState>({ state: 'loading' });
   const [mode, setMode] = useState<QortiumNodeSettingsMode>(nodeSettings.mode);
   const [customUrl, setCustomUrl] = useState(nodeSettings.customUrl);
@@ -122,12 +127,14 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
         }
 
         if (result.ok && isNodeStatusResponse(result.status)) {
-          setNodeStatus({ state: 'available', data: result.status });
+          onResolvedNodeApiUrl(result.nodeApiUrl);
+          setNodeStatus({ state: 'available', data: result.status, nodeApiUrl: result.nodeApiUrl });
           return;
         }
 
         setNodeStatus({
           state: 'unavailable',
+          nodeApiUrl: result.nodeApiUrl,
           message: result.ok ? 'Node status response did not match the expected shape.' : result.message,
         });
       } catch (error) {
@@ -147,14 +154,18 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
       isMounted = false;
       window.clearInterval(refreshInterval);
     };
-  }, [nodeSettings.nodeApiUrl]);
+  }, [nodeSettings.nodeApiUrl, onResolvedNodeApiUrl]);
 
   const displayStatus = getDisplayStatus(nodeStatus);
+  const activeNodeApiUrl =
+    nodeStatus.state === 'available' || nodeStatus.state === 'unavailable'
+      ? nodeStatus.nodeApiUrl || nodeSettings.nodeApiUrl
+      : nodeSettings.nodeApiUrl;
   const detailRows = useMemo<DetailRow[]>(() => {
     const rows: DetailRow[] =
       nodeStatus.state === 'available'
         ? [
-            { label: 'Node', value: nodeSettings.nodeApiUrl },
+            { label: 'Node', value: activeNodeApiUrl },
             { label: 'Status', value: displayStatus },
             { label: 'Chain peers', value: nodeStatus.data.numberOfConnections.toLocaleString() },
             { label: 'Data peers', value: nodeStatus.data.numberOfDataConnections.toLocaleString() },
@@ -162,7 +173,7 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
             { label: 'Sync', value: formatPercent(nodeStatus.data.syncPercent) },
           ]
         : [
-            { label: 'Node', value: nodeSettings.nodeApiUrl },
+            { label: 'Node', value: activeNodeApiUrl },
             { label: 'Status', value: displayStatus },
             { label: 'Chain peers', value: '-' },
             { label: 'Data peers', value: '-' },
@@ -178,7 +189,7 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
     }
 
     return rows;
-  }, [displayStatus, nodeSettings.nodeApiUrl, nodeStatus]);
+  }, [activeNodeApiUrl, displayStatus, nodeStatus]);
 
   async function handleTestConnection() {
     setIsTesting(true);
@@ -186,6 +197,10 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
 
     try {
       const result = await window.qortiumHome.node.testConnection(getNodeSettingsRequest(mode, customUrl));
+
+      if (result.ok) {
+        onResolvedNodeApiUrl(result.nodeApiUrl);
+      }
 
       setConfigMessage({
         kind: result.ok ? 'success' : 'error',
@@ -209,6 +224,7 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
     try {
       const settings = await onSaveNodeSettings(getNodeSettingsRequest(mode, customUrl));
 
+      onResolvedNodeApiUrl(settings.nodeApiUrl);
       setConfigMessage({
         kind: 'success',
         text: `Using ${settings.nodeApiUrl}.`,
@@ -267,7 +283,10 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
                 setConfigMessage(null);
               }}
             >
-              <option value="previewnet">Qortium Previewnet</option>
+              <option value="local">Local node</option>
+              {nodeSettings.networkModeAvailable ? (
+                <option value="network">Previewnet network</option>
+              ) : null}
               <option value="custom">Custom</option>
             </select>
           </label>
@@ -287,10 +306,15 @@ export function NodeStatusButton({ nodeSettings, onSaveNodeSettings }: NodeStatu
                 }}
               />
             </label>
+          ) : mode === 'network' ? (
+            <p className="node-status__preset">
+              <span>Seeds</span>
+              <span>{nodeSettings.networkSeedUrls.length.toLocaleString()} nodes</span>
+            </p>
           ) : (
             <p className="node-status__preset">
-              <span>Previewnet</span>
-              <span>{nodeSettings.previewnetUrl}</span>
+              <span>Local</span>
+              <span>{nodeSettings.localUrl}</span>
             </p>
           )}
 

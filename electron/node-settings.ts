@@ -2,10 +2,10 @@ import { app, ipcMain } from 'electron';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const DEFAULT_PREVIEWNET_NODE_API_URL = 'http://127.0.0.1:24891';
+const DEFAULT_LOCAL_NODE_API_URL = 'http://127.0.0.1:24891';
 const NODE_SETTINGS_FILE = 'node-settings.json';
 
-type NodeSettingsMode = 'custom' | 'previewnet';
+type NodeSettingsMode = 'custom' | 'local' | 'network';
 
 type NodeSettings = {
   customUrl: string;
@@ -25,11 +25,11 @@ function getNodeSettingsPath() {
   return path.join(app.getPath('userData'), NODE_SETTINGS_FILE);
 }
 
-function getPreviewnetNodeApiUrl() {
+function getLocalNodeApiUrl() {
   try {
-    return normalizeNodeApiUrl(process.env.QORTIUM_HOME_NODE_API_URL ?? DEFAULT_PREVIEWNET_NODE_API_URL);
+    return normalizeNodeApiUrl(process.env.QORTIUM_HOME_NODE_API_URL ?? DEFAULT_LOCAL_NODE_API_URL);
   } catch {
-    return DEFAULT_PREVIEWNET_NODE_API_URL;
+    return DEFAULT_LOCAL_NODE_API_URL;
   }
 }
 
@@ -67,7 +67,7 @@ function normalizeNodeApiUrl(value: string) {
 function getDefaultNodeSettings(): NodeSettings {
   return {
     customUrl: '',
-    mode: 'previewnet',
+    mode: 'local',
   };
 }
 
@@ -88,16 +88,25 @@ function parseStoredNodeSettings(value: unknown): NodeSettings {
     }
   }
 
-  if (rawSettings.mode === 'custom' && customUrl) {
+  const rawMode = (rawSettings as { mode?: unknown }).mode;
+
+  if (rawMode === 'custom' && customUrl) {
     return {
       customUrl,
       mode: 'custom',
     };
   }
 
+  if (rawMode === 'local' || rawMode === 'previewnet') {
+    return {
+      customUrl,
+      mode: 'local',
+    };
+  }
+
   return {
     customUrl,
-    mode: 'previewnet',
+    mode: 'local',
   };
 }
 
@@ -123,8 +132,8 @@ function normalizeNodeSettingsRequest(value: NodeSettingsRequest): NodeSettings 
     throw new Error('Node settings are required.');
   }
 
-  if (value.mode !== 'previewnet' && value.mode !== 'custom') {
-    throw new Error('Choose either the Previewnet preset or a custom node.');
+  if (value.mode !== 'local' && value.mode !== 'custom') {
+    throw new Error('Choose either the local node or a custom node.');
   }
 
   const rawCustomUrl = getString(value.customUrl);
@@ -141,14 +150,16 @@ function normalizeNodeSettingsRequest(value: NodeSettingsRequest): NodeSettings 
 }
 
 function resolveNodeApiUrl(settings: NodeSettings) {
-  return settings.mode === 'custom' && settings.customUrl ? settings.customUrl : getPreviewnetNodeApiUrl();
+  return settings.mode === 'custom' && settings.customUrl ? settings.customUrl : getLocalNodeApiUrl();
 }
 
 function getNodeSettingsSnapshot(settings = readNodeSettings()) {
   return {
     ...settings,
+    localUrl: getLocalNodeApiUrl(),
+    networkModeAvailable: false,
+    networkSeedUrls: [],
     nodeApiUrl: resolveNodeApiUrl(settings),
-    previewnetUrl: getPreviewnetNodeApiUrl(),
   };
 }
 

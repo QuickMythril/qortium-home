@@ -23,6 +23,7 @@ type TopBarProps = {
   onGoToHistoryIndex: (index: number) => void;
   onNavigate: (route: AppRoute) => void;
   onReorderTab: (draggedTabId: string, targetTabId: string, dropPosition: TabDropPosition) => void;
+  onResolvedNodeApiUrl: (nodeApiUrl: string) => void;
   onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
   onSelectTab: (tabId: string) => void;
 };
@@ -479,6 +480,7 @@ export function TopBar({
   onGoToHistoryIndex,
   onNavigate,
   onReorderTab,
+  onResolvedNodeApiUrl,
   onSaveNodeSettings,
   onSelectTab,
 }: TopBarProps) {
@@ -557,7 +559,11 @@ export function TopBar({
         {addressError ? <p className="top-bar__error">{addressError}</p> : null}
       </form>
       <AccountChip account={activeAccount} nodeApiUrl={nodeSettings.nodeApiUrl} />
-      <NodeStatusButton nodeSettings={nodeSettings} onSaveNodeSettings={onSaveNodeSettings} />
+      <NodeStatusButton
+        nodeSettings={nodeSettings}
+        onResolvedNodeApiUrl={onResolvedNodeApiUrl}
+        onSaveNodeSettings={onSaveNodeSettings}
+      />
     </header>
   );
 }

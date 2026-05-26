@@ -37,13 +37,15 @@ type QortiumCreateWalletResult = QortiumAccountsState & {
   canceled: boolean;
 };
 
-type QortiumNodeSettingsMode = 'custom' | 'previewnet';
+type QortiumNodeSettingsMode = 'custom' | 'local' | 'network';
 
 type QortiumNodeSettings = {
   customUrl: string;
+  localUrl: string;
   mode: QortiumNodeSettingsMode;
+  networkModeAvailable: boolean;
+  networkSeedUrls: string[];
   nodeApiUrl: string;
-  previewnetUrl: string;
 };
 
 type QortiumNodeSettingsRequest = {

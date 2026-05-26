@@ -1,5 +1,5 @@
 import './styles.css';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AccountsPanel } from './AccountsPanel';
 import { ApiViewer } from './ApiViewer';
 import { QdnExplorer } from './QdnExplorer';
@@ -188,6 +188,23 @@ export function App() {
 
     return settings;
   }
+
+  const updateResolvedNodeApiUrl = useCallback((nodeApiUrl: string) => {
+    setNodeSettings((currentSettings) => {
+      if (
+        !currentSettings ||
+        currentSettings.mode !== 'network' ||
+        currentSettings.nodeApiUrl === nodeApiUrl
+      ) {
+        return currentSettings;
+      }
+
+      return {
+        ...currentSettings,
+        nodeApiUrl,
+      };
+    });
+  }, []);
 
   function updateActiveTab(updateTab: (tab: BrowserTab) => BrowserTab) {
     setTabState((currentTabState) => ({
@@ -384,6 +401,7 @@ export function App() {
         onGoToHistoryIndex={goToHistoryIndex}
         onNavigate={navigateToRoute}
         onReorderTab={reorderTab}
+        onResolvedNodeApiUrl={updateResolvedNodeApiUrl}
         onSaveNodeSettings={saveNodeSettings}
         onSelectTab={selectTab}
         nodeSettings={nodeSettings}

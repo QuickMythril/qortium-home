@@ -3,9 +3,18 @@ import { Preferences } from '@capacitor/preferences';
 import { PUBLIC_QDN_SERVICES } from './qdn';
 
 const NODE_SETTINGS_KEY = 'qortium-home-node-settings';
-const DESKTOP_PREVIEWNET_NODE_API_URL = 'http://127.0.0.1:24891';
-const ANDROID_EMULATOR_PREVIEWNET_NODE_API_URL = 'http://10.0.2.2:24891';
+const NODE_DISCOVERY_CACHE_KEY = 'qortium-home-node-discovery-cache';
+const DESKTOP_LOCAL_NODE_API_URL = 'http://127.0.0.1:24891';
+const ANDROID_EMULATOR_LOCAL_NODE_API_URL = 'http://10.0.2.2:24891';
+const PREVIEWNET_API_PORT = '24891';
+const PREVIEWNET_P2P_PORT = '24892';
+const PREVIEWNET_SEED_NODE_API_URLS = [
+  'http://146.103.42.59:24891',
+  'http://185.207.104.78:24891',
+];
 const REQUEST_TIMEOUT_MS = 30_000;
+const DISCOVERY_TIMEOUT_MS = 5_000;
+const DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
 
 type StoredNodeSettings = {
   customUrl: string;
@@ -13,6 +22,19 @@ type StoredNodeSettings = {
 };
 
 type PlatformApi = Window['qortiumHome'];
+
+type DiscoveryCache = {
+  expiresAt: number;
+  nodeApiUrl: string;
+};
+
+type DiscoveryCandidate = {
+  height: number;
+  isSynchronizing: boolean;
+  nodeApiUrl: string;
+  peerCount: number;
+  status: unknown;
+};
 
 function isAndroid() {
   return Capacitor.getPlatform() === 'android';
@@ -34,8 +56,8 @@ function getBoolean(value: unknown) {
   return typeof value === 'boolean' ? value : undefined;
 }
 
-function getPreviewnetNodeApiUrl() {
-  return isAndroid() ? ANDROID_EMULATOR_PREVIEWNET_NODE_API_URL : DESKTOP_PREVIEWNET_NODE_API_URL;
+function getLocalNodeApiUrl() {
+  return isAndroid() ? ANDROID_EMULATOR_LOCAL_NODE_API_URL : DESKTOP_LOCAL_NODE_API_URL;
 }
 
 function normalizeNodeApiUrl(value: string) {
@@ -72,7 +94,7 @@ function normalizeNodeApiUrl(value: string) {
 function getDefaultNodeSettings(): StoredNodeSettings {
   return {
     customUrl: '',
-    mode: 'previewnet',
+    mode: isAndroid() ? 'network' : 'local',
   };
 }
 
@@ -93,16 +115,39 @@ function parseStoredNodeSettings(value: unknown): StoredNodeSettings {
     }
   }
 
-  if (rawSettings.mode === 'custom' && customUrl) {
+  const rawMode = (rawSettings as { mode?: unknown }).mode;
+
+  if (rawMode === 'custom' && customUrl) {
     return {
       customUrl,
       mode: 'custom',
     };
   }
 
+  if (rawMode === 'network') {
+    return {
+      customUrl,
+      mode: 'network',
+    };
+  }
+
+  if (rawMode === 'local') {
+    return {
+      customUrl,
+      mode: 'local',
+    };
+  }
+
+  if (rawMode === 'previewnet') {
+    return {
+      customUrl,
+      mode: isAndroid() ? 'network' : 'local',
+    };
+  }
+
   return {
     customUrl,
-    mode: 'previewnet',
+    mode: isAndroid() ? 'network' : 'local',
   };
 }
 
@@ -111,8 +156,8 @@ function normalizeNodeSettingsRequest(value: QortiumNodeSettingsRequest): Stored
     throw new Error('Node settings are required.');
   }
 
-  if (value.mode !== 'previewnet' && value.mode !== 'custom') {
-    throw new Error('Choose either the Previewnet preset or a custom node.');
+  if (value.mode !== 'local' && value.mode !== 'network' && value.mode !== 'custom') {
+    throw new Error('Choose the local node, Previewnet network, or a custom node.');
   }
 
   const rawCustomUrl = getString(value.customUrl);
@@ -128,15 +173,45 @@ function normalizeNodeSettingsRequest(value: QortiumNodeSettingsRequest): Stored
   };
 }
 
-function resolveNodeApiUrl(settings: StoredNodeSettings) {
-  return settings.mode === 'custom' && settings.customUrl ? settings.customUrl : getPreviewnetNodeApiUrl();
+function getFallbackNodeApiUrl(settings: StoredNodeSettings) {
+  if (settings.mode === 'custom' && settings.customUrl) {
+    return settings.customUrl;
+  }
+
+  if (settings.mode === 'network') {
+    return PREVIEWNET_SEED_NODE_API_URLS[0];
+  }
+
+  return getLocalNodeApiUrl();
 }
 
-function getNodeSettingsSnapshot(settings: StoredNodeSettings): QortiumNodeSettings {
+async function resolveNodeApiUrl(settings: StoredNodeSettings, forceDiscoveryRefresh = false) {
+  if (settings.mode === 'custom' && settings.customUrl) {
+    return settings.customUrl;
+  }
+
+  if (settings.mode === 'network') {
+    return (await discoverPreviewnetNode(forceDiscoveryRefresh)).nodeApiUrl;
+  }
+
+  return getLocalNodeApiUrl();
+}
+
+async function getNodeSettingsSnapshot(settings: StoredNodeSettings): Promise<QortiumNodeSettings> {
+  let nodeApiUrl = getFallbackNodeApiUrl(settings);
+
+  try {
+    nodeApiUrl = await resolveNodeApiUrl(settings);
+  } catch {
+    nodeApiUrl = getFallbackNodeApiUrl(settings);
+  }
+
   return {
     ...settings,
-    nodeApiUrl: resolveNodeApiUrl(settings),
-    previewnetUrl: getPreviewnetNodeApiUrl(),
+    localUrl: getLocalNodeApiUrl(),
+    networkModeAvailable: true,
+    networkSeedUrls: PREVIEWNET_SEED_NODE_API_URLS,
+    nodeApiUrl,
   };
 }
 
@@ -169,6 +244,226 @@ async function readNodeSettings() {
 
 async function writeNodeSettings(settings: StoredNodeSettings) {
   await setStoredValue(NODE_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function parseDiscoveryCache(value: unknown): DiscoveryCache | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const cache = value as Partial<DiscoveryCache>;
+
+  if (typeof cache.nodeApiUrl !== 'string' || typeof cache.expiresAt !== 'number') {
+    return null;
+  }
+
+  try {
+    return {
+      nodeApiUrl: normalizeNodeApiUrl(cache.nodeApiUrl),
+      expiresAt: cache.expiresAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readDiscoveryCache() {
+  try {
+    const rawCache = await getStoredValue(NODE_DISCOVERY_CACHE_KEY);
+
+    if (!rawCache) {
+      return null;
+    }
+
+    const cache = parseDiscoveryCache(JSON.parse(rawCache) as unknown);
+
+    return cache && cache.expiresAt > Date.now() ? cache : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeDiscoveryCache(nodeApiUrl: string) {
+  await setStoredValue(
+    NODE_DISCOVERY_CACHE_KEY,
+    JSON.stringify({
+      nodeApiUrl,
+      expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS,
+    }),
+  );
+}
+
+function normalizeCandidateNodeApiUrl(value: string) {
+  const normalizedUrl = new URL(normalizeNodeApiUrl(value));
+
+  normalizedUrl.port = PREVIEWNET_API_PORT;
+
+  return normalizedUrl.origin;
+}
+
+function peerAddressToNodeApiUrl(value: unknown) {
+  const address = getString(value);
+
+  if (!address) {
+    return null;
+  }
+
+  try {
+    const candidate = /^https?:\/\//i.test(address) ? address : `http://${address}`;
+    const url = new URL(candidate);
+
+    if (!url.hostname) {
+      return null;
+    }
+
+    url.protocol = 'http:';
+    url.username = '';
+    url.password = '';
+    url.port = PREVIEWNET_API_PORT;
+    url.pathname = '';
+    url.search = '';
+    url.hash = '';
+
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function getKnownPeerAddress(value: unknown) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const peer = value as { address?: unknown };
+
+  return getString(peer.address);
+}
+
+function getStatusHeight(status: unknown) {
+  if (!status || typeof status !== 'object') {
+    return 0;
+  }
+
+  const height = (status as { height?: unknown }).height;
+
+  return typeof height === 'number' && Number.isFinite(height) ? height : 0;
+}
+
+function getStatusPeerCount(status: unknown) {
+  if (!status || typeof status !== 'object') {
+    return 0;
+  }
+
+  const statusObject = status as {
+    numberOfConnections?: unknown;
+    numberOfDataConnections?: unknown;
+  };
+  const chainPeers =
+    typeof statusObject.numberOfConnections === 'number' ? statusObject.numberOfConnections : 0;
+  const dataPeers =
+    typeof statusObject.numberOfDataConnections === 'number' ? statusObject.numberOfDataConnections : 0;
+
+  return chainPeers + dataPeers;
+}
+
+function getStatusIsSynchronizing(status: unknown) {
+  if (!status || typeof status !== 'object') {
+    return true;
+  }
+
+  const isSynchronizing = (status as { isSynchronizing?: unknown }).isSynchronizing;
+
+  return typeof isSynchronizing === 'boolean' ? isSynchronizing : true;
+}
+
+async function fetchKnownPeerNodeApiUrls(seedNodeApiUrl: string) {
+  try {
+    const response = await requestNode(seedNodeApiUrl, '/peers/known', 'json', DISCOVERY_TIMEOUT_MS);
+
+    if (response.status < 200 || response.status >= 300 || !Array.isArray(response.data)) {
+      return [];
+    }
+
+    return response.data
+      .map(getKnownPeerAddress)
+      .map(peerAddressToNodeApiUrl)
+      .filter((nodeApiUrl): nodeApiUrl is string => !!nodeApiUrl);
+  } catch {
+    return [];
+  }
+}
+
+async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidate | null> {
+  try {
+    const response = await requestNode(nodeApiUrl, '/admin/status', 'json', DISCOVERY_TIMEOUT_MS);
+
+    if (response.status < 200 || response.status >= 300) {
+      return null;
+    }
+
+    return {
+      nodeApiUrl,
+      status: response.data,
+      height: getStatusHeight(response.data),
+      isSynchronizing: getStatusIsSynchronizing(response.data),
+      peerCount: getStatusPeerCount(response.data),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function rankDiscoveryCandidates(candidates: DiscoveryCandidate[]) {
+  return [...candidates].sort((first, second) => {
+    if (first.isSynchronizing !== second.isSynchronizing) {
+      return first.isSynchronizing ? 1 : -1;
+    }
+
+    if (first.height !== second.height) {
+      return second.height - first.height;
+    }
+
+    return second.peerCount - first.peerCount;
+  });
+}
+
+async function discoverPreviewnetNode(forceRefresh = false): Promise<DiscoveryCandidate> {
+  if (!forceRefresh) {
+    const cache = await readDiscoveryCache();
+
+    if (cache) {
+      const cachedCandidate = await probeNodeCandidate(cache.nodeApiUrl);
+
+      if (cachedCandidate) {
+        return cachedCandidate;
+      }
+    }
+  }
+
+  const candidateUrls = new Set(PREVIEWNET_SEED_NODE_API_URLS.map(normalizeCandidateNodeApiUrl));
+  const knownPeerResults = await Promise.all(
+    PREVIEWNET_SEED_NODE_API_URLS.map(fetchKnownPeerNodeApiUrls),
+  );
+
+  for (const peerNodeApiUrls of knownPeerResults) {
+    for (const peerNodeApiUrl of peerNodeApiUrls) {
+      candidateUrls.add(peerNodeApiUrl);
+    }
+  }
+
+  const candidates = (
+    await Promise.all([...candidateUrls].map((nodeApiUrl) => probeNodeCandidate(nodeApiUrl)))
+  ).filter((candidate): candidate is DiscoveryCandidate => !!candidate);
+  const selectedCandidate = rankDiscoveryCandidates(candidates)[0];
+
+  if (!selectedCandidate) {
+    throw new Error('No reachable Previewnet node was found.');
+  }
+
+  await writeDiscoveryCache(selectedCandidate.nodeApiUrl);
+
+  return selectedCandidate;
 }
 
 function getHeader(response: HttpResponse, headerName: string) {
@@ -228,13 +523,18 @@ function stringifyResponseData(data: unknown) {
   return JSON.stringify(data);
 }
 
-async function requestNode(nodeApiUrl: string, pathname: string, responseType: 'json' | 'text' = 'text') {
+async function requestNode(
+  nodeApiUrl: string,
+  pathname: string,
+  responseType: 'json' | 'text' = 'text',
+  timeoutMs = REQUEST_TIMEOUT_MS,
+) {
   try {
     return await CapacitorHttp.get({
       url: `${getNodeApiUrlBase(nodeApiUrl)}${pathname}`,
       responseType,
-      connectTimeout: REQUEST_TIMEOUT_MS,
-      readTimeout: REQUEST_TIMEOUT_MS,
+      connectTimeout: timeoutMs,
+      readTimeout: timeoutMs,
     });
   } catch {
     throw new Error(getNodeUnavailableMessage(nodeApiUrl));
@@ -254,19 +554,69 @@ async function fetchNodeStatus(nodeApiUrl: string) {
 }
 
 async function testNodeSettings(settings: StoredNodeSettings): Promise<QortiumNodeStatusResult> {
-  const nodeApiUrl = resolveNodeApiUrl(settings);
+  let nodeApiUrl = getFallbackNodeApiUrl(settings);
 
   try {
+    nodeApiUrl = await resolveNodeApiUrl(settings);
+
     return {
       ok: true,
       nodeApiUrl,
       status: await fetchNodeStatus(nodeApiUrl),
     };
   } catch (error) {
+    if (settings.mode === 'network') {
+      try {
+        nodeApiUrl = await resolveNodeApiUrl(settings, true);
+
+        return {
+          ok: true,
+          nodeApiUrl,
+          status: await fetchNodeStatus(nodeApiUrl),
+        };
+      } catch (retryError) {
+        return {
+          ok: false,
+          nodeApiUrl,
+          message: retryError instanceof Error ? retryError.message : 'Unable to reach the configured node.',
+        };
+      }
+    }
+
     return {
       ok: false,
       nodeApiUrl,
       message: error instanceof Error ? error.message : 'Unable to reach the configured node.',
+    };
+  }
+}
+
+async function requestConfiguredNode(
+  settings: StoredNodeSettings,
+  pathname: string,
+  responseType: 'json' | 'text' = 'text',
+) {
+  const nodeApiUrl = await resolveNodeApiUrl(settings);
+
+  try {
+    return {
+      nodeApiUrl,
+      response: await requestNode(nodeApiUrl, pathname, responseType),
+    };
+  } catch (error) {
+    if (settings.mode !== 'network') {
+      throw error;
+    }
+
+    const retryNodeApiUrl = await resolveNodeApiUrl(settings, true);
+
+    if (retryNodeApiUrl === nodeApiUrl) {
+      throw error;
+    }
+
+    return {
+      nodeApiUrl: retryNodeApiUrl,
+      response: await requestNode(retryNodeApiUrl, pathname, responseType),
     };
   }
 }
@@ -433,15 +783,19 @@ function createFallbackApi(): PlatformApi {
     qdn: {
       async authorizeResource(request) {
         normalizeResourceRequest(request);
+        const settings = await readNodeSettings();
 
         return {
           authorized: true,
-          nodeApiUrl: resolveNodeApiUrl(await readNodeSettings()),
+          nodeApiUrl: await resolveNodeApiUrl(settings),
         };
       },
       async listResources(request) {
-        const nodeApiUrl = resolveNodeApiUrl(await readNodeSettings());
-        const response = await requestNode(nodeApiUrl, buildResourcesSearchPath(request), 'json');
+        const { response } = await requestConfiguredNode(
+          await readNodeSettings(),
+          buildResourcesSearchPath(request),
+          'json',
+        );
 
         if (response.status < 200 || response.status >= 300) {
           throw new Error(
@@ -453,9 +807,14 @@ function createFallbackApi(): PlatformApi {
         return response.data;
       },
       async fetchNodeApi(request) {
-        const nodeApiUrl = resolveNodeApiUrl(await readNodeSettings());
+        const settings = await readNodeSettings();
+        const nodeApiUrl = await resolveNodeApiUrl(settings);
         const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
-        const response = await requestNode(nodeApiUrl, getNodeApiPath(request.path, nodeApiUrl), 'text');
+        const { response } = await requestConfiguredNode(
+          settings,
+          getNodeApiPath(request.path, nodeApiUrl),
+          'text',
+        );
         const body = stringifyResponseData(response.data);
         const contentLength = getContentLength(response);
         const contentType = getContentType(response);
@@ -491,9 +850,12 @@ function createFallbackApi(): PlatformApi {
         };
       },
       async fetchResourceText(request) {
-        const nodeApiUrl = resolveNodeApiUrl(await readNodeSettings());
         const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
-        const response = await requestNode(nodeApiUrl, buildRawResourcePath(request), 'text');
+        const { response } = await requestConfiguredNode(
+          await readNodeSettings(),
+          buildRawResourcePath(request),
+          'text',
+        );
 
         if (response.status < 200 || response.status >= 300) {
           throw new Error(
