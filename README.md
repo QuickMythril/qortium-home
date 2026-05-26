@@ -158,7 +158,14 @@ The current Android build is an unsigned/debug-oriented Capacitor scaffold. It
 requires a local Android SDK with Android Platform 36 and Build Tools 35
 installed, SDK licenses accepted, and `ANDROID_HOME` or `ANDROID_SDK_ROOT`
 pointing at the SDK. The debug APK output is generated under
-`android/app/build/outputs/apk/debug/`.
+`android/app/build/outputs/apk/debug/` with a filename like
+`Qortium-Home-1.0.0-android-debug.apk`.
+
+Regenerate Android launcher icons after changing `build/icon-source.png`:
+
+```sh
+npm run icons:android
+```
 
 Android currently connects to an existing node only. The Previewnet preset uses
 `http://10.0.2.2:24891` for emulator testing; physical devices should use a

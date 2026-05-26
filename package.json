@@ -20,6 +20,7 @@
     "dist:mac:arm64": "npm run build && electron-builder --mac dmg --arm64 --publish never",
     "dist:mac:universal": "npm run build && electron-builder --mac dmg --universal --publish never",
     "dist:win:x64": "npm run build && electron-builder --win portable --x64 --publish never",
+    "icons:android": "node scripts/generate-android-icons.mjs",
     "android:sync": "npm run build:renderer && cap sync android",
     "android:open": "npm run android:sync && cap open android",
     "dist:android:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
