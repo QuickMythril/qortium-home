@@ -407,11 +407,11 @@ h1 {
   z-index: 12;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 8px;
   align-items: start;
   width: 100%;
   min-width: 0;
-  padding: 14px 20px;
+  padding: 8px 14px;
   background: #151b1b;
   border-bottom: 1px solid #263232;
 }
@@ -419,39 +419,63 @@ h1 {
 .top-bar__tabs {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 1fr) 42px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 6px;
   align-items: center;
   min-width: 0;
 }
 
 .top-bar__tab-list {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: thin;
 }
 
 .top-bar__tab {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
-  width: min(220px, 32vw);
-  min-width: 128px;
-  height: 36px;
-  min-height: 36px;
+  width: min(200px, 28vw);
+  min-width: 116px;
+  height: 32px;
+  min-height: 32px;
   overflow: hidden;
   color: #cbd5d5;
   background: #192020;
   border: 1px solid #263232;
-  border-radius: 8px;
+  border-radius: 7px;
 }
 
 .top-bar__tab--active {
   color: #f4f0e8;
   background: #202727;
   border-color: #536363;
+}
+
+.top-bar__tab--dragging {
+  opacity: 0.55;
+}
+
+.top-bar__tab--drop-before::before,
+.top-bar__tab--drop-after::after {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  content: "";
+  background: #87d99b;
+  border-radius: 999px;
+}
+
+.top-bar__tab--drop-before::before {
+  left: 2px;
+}
+
+.top-bar__tab--drop-after::after {
+  right: 2px;
 }
 
 .top-bar__tab-select,
@@ -468,7 +492,7 @@ h1 {
 
 .top-bar__tab-select {
   display: block;
-  padding-left: 12px;
+  padding-left: 10px;
   overflow: hidden;
   text-align: left;
 }
@@ -497,19 +521,17 @@ h1 {
   outline: none;
 }
 
-.top-bar__tab-close:disabled {
-  cursor: not-allowed;
-  opacity: 0.32;
-}
-
 .top-bar__new-tab {
+  width: 36px;
+  min-width: 36px;
+  height: 32px;
   color: #cbd5d5;
 }
 
 .top-bar__address-form {
   display: grid;
   grid-template-columns: 42px 42px minmax(0, 1fr) 42px;
-  gap: 8px;
+  gap: 6px;
   align-items: start;
   min-width: 0;
 }
@@ -1219,12 +1241,12 @@ h1 {
 
   .top-bar {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: 6px;
+    padding: 8px 10px;
   }
 
   .top-bar__tabs {
-    grid-template-columns: minmax(0, 1fr) 42px;
+    grid-template-columns: minmax(0, 1fr) 36px;
   }
 
   .top-bar__tab {

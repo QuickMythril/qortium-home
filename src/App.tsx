@@ -22,6 +22,8 @@ type BrowserTabState = {
   tabs: BrowserTab[];
 };
 
+type TabDropPosition = 'after' | 'before';
+
 let nextTabId = 1;
 
 function createBrowserTab(): BrowserTab {
@@ -172,7 +174,12 @@ export function App() {
   function closeTab(tabId: string) {
     setTabState((currentTabState) => {
       if (currentTabState.tabs.length <= 1) {
-        return currentTabState;
+        const tab = createBrowserTab();
+
+        return {
+          tabs: [tab],
+          activeTabId: tab.id,
+        };
       }
 
       const closingTabIndex = currentTabState.tabs.findIndex((tab) => tab.id === tabId);
@@ -188,6 +195,39 @@ export function App() {
         tabs,
         activeTabId:
           currentTabState.activeTabId === tabId ? tabs[nextActiveIndex].id : currentTabState.activeTabId,
+      };
+    });
+  }
+
+  function reorderTab(draggedTabId: string, targetTabId: string, dropPosition: TabDropPosition) {
+    setTabState((currentTabState) => {
+      if (draggedTabId === targetTabId) {
+        return currentTabState;
+      }
+
+      const draggedTab = currentTabState.tabs.find((tab) => tab.id === draggedTabId);
+
+      if (!draggedTab) {
+        return currentTabState;
+      }
+
+      const tabsWithoutDraggedTab = currentTabState.tabs.filter((tab) => tab.id !== draggedTabId);
+      const targetIndex = tabsWithoutDraggedTab.findIndex((tab) => tab.id === targetTabId);
+
+      if (targetIndex === -1) {
+        return currentTabState;
+      }
+
+      const insertIndex = dropPosition === 'after' ? targetIndex + 1 : targetIndex;
+      const tabs = [
+        ...tabsWithoutDraggedTab.slice(0, insertIndex),
+        draggedTab,
+        ...tabsWithoutDraggedTab.slice(insertIndex),
+      ];
+
+      return {
+        ...currentTabState,
+        tabs,
       };
     });
   }
@@ -226,6 +266,7 @@ export function App() {
         onGoForward={goForward}
         onGoToHistoryIndex={goToHistoryIndex}
         onNavigate={navigateToRoute}
+        onReorderTab={reorderTab}
         onSaveNodeSettings={saveNodeSettings}
         onSelectTab={selectTab}
         nodeSettings={nodeSettings}

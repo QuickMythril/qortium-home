@@ -1,5 +1,5 @@
 import { ArrowRight, ChevronLeft, ChevronRight, Globe2, Plus, X } from 'lucide-react';
-import type { FormEvent, MouseEvent } from 'react';
+import type { DragEvent, FormEvent, MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { NodeStatusButton } from './NodeStatusButton';
 import { Popover } from './components/Popover';
@@ -21,9 +21,12 @@ type TopBarProps = {
   onGoForward: () => void;
   onGoToHistoryIndex: (index: number) => void;
   onNavigate: (route: AppRoute) => void;
+  onReorderTab: (draggedTabId: string, targetTabId: string, dropPosition: TabDropPosition) => void;
   onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
   onSelectTab: (tabId: string) => void;
 };
+
+type TabDropPosition = 'after' | 'before';
 
 type BrowserTabSummary = {
   id: string;
@@ -142,28 +145,103 @@ function BrowserTabs({
   activeTabId,
   onAddTab,
   onCloseTab,
+  onReorderTab,
   onSelectTab,
   tabs,
 }: {
   activeTabId: string;
   onAddTab: () => void;
   onCloseTab: (tabId: string) => void;
+  onReorderTab: (draggedTabId: string, targetTabId: string, dropPosition: TabDropPosition) => void;
   onSelectTab: (tabId: string) => void;
   tabs: BrowserTabSummary[];
 }) {
-  const canCloseTabs = tabs.length > 1;
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dragTarget, setDragTarget] = useState<{
+    position: TabDropPosition;
+    tabId: string;
+  } | null>(null);
+
+  function getDropPosition(event: DragEvent<HTMLElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+
+    return event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
+  }
+
+  function clearDragState() {
+    setDraggedTabId(null);
+    setDragTarget(null);
+  }
 
   return (
     <div className="top-bar__tabs">
-      <div className="top-bar__tab-list" role="tablist" aria-label="Browser tabs">
+      <div
+        className="top-bar__tab-list"
+        role="tablist"
+        aria-label="Browser tabs"
+        onDoubleClick={(event) => {
+          if (event.currentTarget === event.target) {
+            onAddTab();
+          }
+        }}
+      >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
+          const isDragTarget = dragTarget?.tabId === tab.id;
 
           return (
             <div
-              className={`top-bar__tab${isActive ? ' top-bar__tab--active' : ''}`}
+              className={`top-bar__tab${isActive ? ' top-bar__tab--active' : ''}${
+                draggedTabId === tab.id ? ' top-bar__tab--dragging' : ''
+              }${
+                isDragTarget ? ` top-bar__tab--drop-${dragTarget.position}` : ''
+              }`}
+              draggable
               key={tab.id}
               role="presentation"
+              onAuxClick={(event) => {
+                if (event.button === 1) {
+                  event.preventDefault();
+                  onCloseTab(tab.id);
+                }
+              }}
+              onDragEnd={clearDragState}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setDragTarget((currentTarget) =>
+                    currentTarget?.tabId === tab.id ? null : currentTarget,
+                  );
+                }
+              }}
+              onDragOver={(event) => {
+                if (!draggedTabId || draggedTabId === tab.id) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                setDragTarget({
+                  tabId: tab.id,
+                  position: getDropPosition(event),
+                });
+              }}
+              onDragStart={(event) => {
+                setDraggedTabId(tab.id);
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', tab.id);
+              }}
+              onDrop={(event) => {
+                const sourceTabId = draggedTabId || event.dataTransfer.getData('text/plain');
+
+                if (!sourceTabId || sourceTabId === tab.id) {
+                  clearDragState();
+                  return;
+                }
+
+                event.preventDefault();
+                onReorderTab(sourceTabId, tab.id, getDropPosition(event));
+                clearDragState();
+              }}
             >
               <button
                 className="top-bar__tab-select"
@@ -177,10 +255,9 @@ function BrowserTabs({
               </button>
               <button
                 className="top-bar__tab-close"
-                disabled={!canCloseTabs}
                 type="button"
-                title={canCloseTabs ? `Close ${tab.label}` : 'Last tab cannot be closed'}
-                aria-label={canCloseTabs ? `Close ${tab.label}` : 'Last tab cannot be closed'}
+                title={`Close ${tab.label}`}
+                aria-label={`Close ${tab.label}`}
                 onClick={() => onCloseTab(tab.id)}
               >
                 <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -212,6 +289,7 @@ export function TopBar({
   onGoForward,
   onGoToHistoryIndex,
   onNavigate,
+  onReorderTab,
   onSaveNodeSettings,
   onSelectTab,
 }: TopBarProps) {
@@ -244,6 +322,7 @@ export function TopBar({
         tabs={tabs}
         onAddTab={onAddTab}
         onCloseTab={onCloseTab}
+        onReorderTab={onReorderTab}
         onSelectTab={onSelectTab}
       />
       <form className="top-bar__address-form" onSubmit={handleSubmit}>
