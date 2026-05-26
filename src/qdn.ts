@@ -42,6 +42,8 @@ export const PUBLIC_QDN_SERVICES = [
 
 const IFRAME_QDN_SERVICES = ['APP', 'WEBSITE'] as const;
 const IMAGE_QDN_SERVICES = ['IMAGE', 'THUMBNAIL', 'QCHAT_IMAGE'] as const;
+const AUDIO_QDN_SERVICES = ['AUDIO', 'VOICE', 'PODCAST'] as const;
+const VIDEO_QDN_SERVICES = ['VIDEO'] as const;
 const TEXT_QDN_SERVICES = [
   'JSON',
   'METADATA',
@@ -58,13 +60,15 @@ const DOWNLOAD_QDN_SERVICES = ['DOCUMENT', 'FILE', 'FILES', 'ATTACHMENT'] as con
 const RENDERABLE_QDN_SERVICES = [
   ...IFRAME_QDN_SERVICES,
   ...IMAGE_QDN_SERVICES,
+  ...AUDIO_QDN_SERVICES,
+  ...VIDEO_QDN_SERVICES,
   ...TEXT_QDN_SERVICES,
   ...DOWNLOAD_QDN_SERVICES,
 ] as const;
 
 export type QdnService = (typeof PUBLIC_QDN_SERVICES)[number];
 export type QdnRenderableService = (typeof RENDERABLE_QDN_SERVICES)[number];
-export type QdnViewerKind = 'download' | 'iframe' | 'image' | 'text' | 'unsupported';
+export type QdnViewerKind = 'audio' | 'download' | 'iframe' | 'image' | 'text' | 'unsupported' | 'video';
 
 export type QdnExplorerRoute =
   | {
@@ -203,6 +207,14 @@ export function getQdnViewerKind(service: QdnService): QdnViewerKind {
 
   if (IMAGE_QDN_SERVICES.includes(service as (typeof IMAGE_QDN_SERVICES)[number])) {
     return 'image';
+  }
+
+  if (AUDIO_QDN_SERVICES.includes(service as (typeof AUDIO_QDN_SERVICES)[number])) {
+    return 'audio';
+  }
+
+  if (VIDEO_QDN_SERVICES.includes(service as (typeof VIDEO_QDN_SERVICES)[number])) {
+    return 'video';
   }
 
   if (TEXT_QDN_SERVICES.includes(service as (typeof TEXT_QDN_SERVICES)[number])) {

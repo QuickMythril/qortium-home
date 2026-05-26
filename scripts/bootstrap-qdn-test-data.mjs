@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -6,6 +7,8 @@ const DEFAULT_NODE_API_URL = 'http://127.0.0.1:24891';
 const DEFAULT_NAME = 'QortiumHomeTest';
 const APP_IDENTIFIER = 'home-test';
 const IMAGE_IDENTIFIER = 'home-image';
+const AUDIO_IDENTIFIER = 'home-audio';
+const VIDEO_IDENTIFIER = 'home-video';
 const JSON_IDENTIFIER = 'home-json';
 const FILE_IDENTIFIER = 'home-file';
 const POLL_INTERVAL_MS = 5_000;
@@ -326,6 +329,8 @@ function createFixtureFiles() {
   const appDirectory = path.join(fixtureRoot, 'app');
   const websiteDirectory = path.join(fixtureRoot, 'website');
   const imagePath = path.join(fixtureRoot, 'qortium-home-test-image.svg');
+  const audioPath = path.join(fixtureRoot, 'qortium-home-test-audio.ogg');
+  const videoPath = path.join(fixtureRoot, 'qortium-home-test-video.webm');
   const jsonPath = path.join(fixtureRoot, 'qortium-home-test.json');
   const filePath = path.join(fixtureRoot, 'qortium-home-test-file.txt');
 
@@ -475,12 +480,67 @@ function createFixtureFiles() {
     'utf8',
   );
 
+  try {
+    execFileSync(
+      'ffmpeg',
+      [
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=2:sample_rate=44100',
+        '-c:a',
+        'libvorbis',
+        '-q:a',
+        '4',
+        audioPath,
+      ],
+      { stdio: 'pipe' },
+    );
+
+    execFileSync(
+      'ffmpeg',
+      [
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=24:duration=3',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=660:duration=3:sample_rate=44100',
+        '-shortest',
+        '-c:v',
+        'libvpx',
+        '-b:v',
+        '500k',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'libvorbis',
+        '-q:a',
+        '3',
+        videoPath,
+      ],
+      { stdio: 'pipe' },
+    );
+  } catch (error) {
+    throw new Error(
+      `Unable to generate AUDIO and VIDEO fixtures with ffmpeg. Install ffmpeg and retry. ${
+        error instanceof Error ? error.message : ''
+      }`.trim(),
+    );
+  }
+
   return {
     appDirectory,
+    audioPath,
     filePath,
     fixtureRoot,
     imagePath,
     jsonPath,
+    videoPath,
     websiteDirectory,
   };
 }
@@ -582,6 +642,20 @@ try {
     description: 'Temporary Qortium Home QDN browser test image',
   });
   await publishResource({
+    service: 'AUDIO',
+    identifier: AUDIO_IDENTIFIER,
+    path: fixtures.audioPath,
+    title: 'Qortium Home AUDIO Test',
+    description: 'Temporary Qortium Home QDN browser audio-player test data',
+  });
+  await publishResource({
+    service: 'VIDEO',
+    identifier: VIDEO_IDENTIFIER,
+    path: fixtures.videoPath,
+    title: 'Qortium Home VIDEO Test',
+    description: 'Temporary Qortium Home QDN browser video-player test data',
+  });
+  await publishResource({
     service: 'JSON',
     identifier: JSON_IDENTIFIER,
     path: fixtures.jsonPath,
@@ -599,6 +673,8 @@ try {
   await waitForResourceReady('APP', APP_IDENTIFIER);
   await waitForResourceReady('WEBSITE');
   await waitForResourceReady('IMAGE', IMAGE_IDENTIFIER);
+  await waitForResourceReady('AUDIO', AUDIO_IDENTIFIER);
+  await waitForResourceReady('VIDEO', VIDEO_IDENTIFIER);
   await waitForResourceReady('JSON', JSON_IDENTIFIER);
   await waitForResourceReady('FILE', FILE_IDENTIFIER);
 
@@ -606,6 +682,8 @@ try {
   console.log(`APP: qdn://APP/${testName}/${APP_IDENTIFIER}`);
   console.log(`WEBSITE: qdn://WEBSITE/${testName}/default`);
   console.log(`IMAGE: qdn://IMAGE/${testName}/${IMAGE_IDENTIFIER}`);
+  console.log(`AUDIO: qdn://AUDIO/${testName}/${AUDIO_IDENTIFIER}`);
+  console.log(`VIDEO: qdn://VIDEO/${testName}/${VIDEO_IDENTIFIER}`);
   console.log(`JSON: qdn://JSON/${testName}/${JSON_IDENTIFIER}`);
   console.log(`FILE: qdn://FILE/${testName}/${FILE_IDENTIFIER}`);
 } finally {

@@ -39,6 +39,11 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - Browse `APP` services.
   - Browse `WEBSITE` services.
   - Support additional QDN service types such as `IMAGE`, `AUDIO`, and other available services.
+  - Load image resources in a dedicated image viewer.
+  - Load audio-style resources in a native audio player.
+  - Load video resources in a native video player.
+  - Load text-style resources in an inline text viewer.
+  - Load file-style resources through a download/details view.
   - Load direct API endpoint URLs so users can inspect chain data inside the UI.
   - Support read-only direct node API endpoint viewing through the address bar.
   - Start with read-only API `GET` requests; defer authenticated or write-style API requests until explicit permission prompts exist.
@@ -143,6 +148,7 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Single active page/view for QDN pages, QDN apps/websites, and direct API endpoint views.
 - Future browser-style tab management.
 - QDN service browsing across common service types.
+- Dedicated QDN viewers for app, website, image, audio, video, text, and file-style resources.
 - Direct Qortal API endpoint viewing for read-only node API `GET` requests.
 - Preinstalled or externally managed core connection support.
 - Qortium Previewnet preset for `http://127.0.0.1:24891`.

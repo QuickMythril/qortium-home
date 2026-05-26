@@ -1,4 +1,4 @@
-import { FileText, Folder, RefreshCw } from 'lucide-react';
+import { FileAudio, FileText, FileVideo, Folder, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { QdnExplorerRoute, QdnResourceListItem, QdnRoute, QdnService } from './qdn';
 import {
@@ -481,13 +481,16 @@ export function QdnExplorer({ nodeApiUrl, onNavigate, route }: QdnExplorerProps)
                 )
                 .map((resource) => {
                   const canOpenResource = isQdnRenderableService(resource.service);
-                  const isImageResource = getQdnViewerKind(resource.service) === 'image';
+                  const viewerKind = getQdnViewerKind(resource.service);
+                  const isImageResource = viewerKind === 'image';
+                  const ResourceIcon =
+                    viewerKind === 'audio' ? FileAudio : viewerKind === 'video' ? FileVideo : FileText;
                   const rowContent = (
                     <>
                       {isImageResource ? (
                         <QdnImageResourcePreview nodeApiUrl={nodeApiUrl} resource={resource} />
                       ) : (
-                        <FileText aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
+                        <ResourceIcon aria-hidden="true" className="qdn-explorer__row-icon" size={22} strokeWidth={2} />
                       )}
                       <span className="qdn-explorer__row-main">
                         <span className="qdn-explorer__row-title">{getQdnItemIdentifier(resource)}</span>

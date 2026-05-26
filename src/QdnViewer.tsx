@@ -62,12 +62,31 @@ type TextPreviewState =
       phase: 'error';
     };
 
+type MediaErrorState = {
+  message: string;
+} | null;
+
 function formatError(error: unknown) {
   if (!(error instanceof Error)) {
     return 'Unable to load QDN resource.';
   }
 
   return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+}
+
+function getMediaErrorMessage(element: HTMLAudioElement | HTMLVideoElement) {
+  switch (element.error?.code) {
+    case MediaError.MEDIA_ERR_ABORTED:
+      return 'Media loading was canceled.';
+    case MediaError.MEDIA_ERR_NETWORK:
+      return 'The media could not be loaded from the configured node.';
+    case MediaError.MEDIA_ERR_DECODE:
+      return 'The media file could not be decoded by this app.';
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return 'This media format is not supported by this app.';
+    default:
+      return 'The media could not be loaded.';
+  }
 }
 
 function getStatusProgress(status: QdnResourceStatus | undefined) {
@@ -740,6 +759,52 @@ function QdnDetailsContent({
   );
 }
 
+function QdnMediaContent({
+  loadedResource,
+  resource,
+}: {
+  loadedResource: LoadedQdnResource;
+  resource: QdnResource;
+}) {
+  const [mediaError, setMediaError] = useState<MediaErrorState>(null);
+  const isVideo = loadedResource.viewerKind === 'video';
+
+  return (
+    <div className={`qdn-viewer__media qdn-viewer__media--${isVideo ? 'video' : 'audio'}`}>
+      <div className="qdn-viewer__media-stage">
+        {isVideo ? (
+          <video
+            className="qdn-viewer__media-player qdn-viewer__media-player--video"
+            controls
+            key={loadedResource.renderUrl}
+            preload="metadata"
+            playsInline
+            src={loadedResource.renderUrl}
+            onCanPlay={() => setMediaError(null)}
+            onError={(event) => setMediaError({ message: getMediaErrorMessage(event.currentTarget) })}
+          />
+        ) : (
+          <audio
+            className="qdn-viewer__media-player qdn-viewer__media-player--audio"
+            controls
+            key={loadedResource.renderUrl}
+            preload="metadata"
+            src={loadedResource.renderUrl}
+            onCanPlay={() => setMediaError(null)}
+            onError={(event) => setMediaError({ message: getMediaErrorMessage(event.currentTarget) })}
+          />
+        )}
+      </div>
+
+      <div className="qdn-viewer__details qdn-viewer__media-details">
+        {mediaError ? <p className="qdn-viewer__message qdn-viewer__message--error">{mediaError.message}</p> : null}
+        <QdnResourceActions loadedResource={loadedResource} resource={resource} />
+        <QdnResourceDetailList loadedResource={loadedResource} resource={resource} />
+      </div>
+    </div>
+  );
+}
+
 function QdnReadyContent({
   loadedResource,
   resource,
@@ -774,6 +839,10 @@ function QdnReadyContent({
 
   if (loadedResource.viewerKind === 'text') {
     return <QdnTextContent loadedResource={loadedResource} resource={resource} />;
+  }
+
+  if (loadedResource.viewerKind === 'audio' || loadedResource.viewerKind === 'video') {
+    return <QdnMediaContent loadedResource={loadedResource} resource={resource} />;
   }
 
   if (loadedResource.viewerKind === 'download') {

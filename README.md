@@ -31,6 +31,8 @@ more broadly.
 - Load `APP` and `WEBSITE` resources in an embedded viewer.
 - Load image-style QDN resources such as `IMAGE`, `THUMBNAIL`, and
   `QCHAT_IMAGE`.
+- Load media-style QDN resources such as `AUDIO`, `VOICE`, `PODCAST`, and
+  `VIDEO`.
 - Load text-style QDN resources such as `JSON`, `METADATA`, `BLOG`, and
   `MESSAGE`.
 - Download file-style QDN resources such as `DOCUMENT`, `FILE`, `FILES`, and
@@ -106,9 +108,9 @@ npm run qdn:bootstrap-test-data
 ```
 
 It registers or reuses a local test name and publishes APP, WEBSITE, IMAGE,
-JSON, and FILE fixtures that Qortium Home can browse. It expects a running local
-Previewnet node and a local preview account with permission to publish test
-resources.
+AUDIO, VIDEO, JSON, and FILE fixtures that Qortium Home can browse. It expects a
+running local Previewnet node and a local preview account with permission to
+publish test resources.
 
 Supported environment variables:
 
