@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-26 - build: add app icon
+
+Added the Qortium Home prototype icon to tracked build resources, generated Linux and Windows icon assets from it, wired the icon into Electron's runtime window, and configured electron-builder so Linux AppImage and Windows portable builds no longer use the default Electron icon.
+
 ### 2026-05-26 - app: show selected account chip
 
 Added a compact selected-account chip to the top bar for each tab. The chip resolves the account's primary registered name, falls back to the first owned name or saved wallet label, shows a published Qortal avatar when available, and exposes the resolved name, address, and wallet label in a hover tooltip.

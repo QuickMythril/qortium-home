@@ -13,6 +13,7 @@ const MIN_WINDOW_WIDTH = 720;
 const MIN_WINDOW_HEIGHT = 480;
 const WINDOW_STATE_FILE = 'window-state.json';
 const WINDOW_STATE_SAVE_DELAY_MS = 250;
+const WINDOW_ICON_FILE = 'icon.png';
 
 type WindowState = {
   height: number;
@@ -141,6 +142,16 @@ function watchWindowState(window: BrowserWindow) {
   });
 }
 
+function getWindowIconPath() {
+  if (process.platform === 'darwin') {
+    return undefined;
+  }
+
+  return app.isPackaged
+    ? path.join(process.resourcesPath, WINDOW_ICON_FILE)
+    : path.join(__dirname, '..', 'build', WINDOW_ICON_FILE);
+}
+
 function createWindow() {
   const windowState = readWindowState();
   const window = new BrowserWindow({
@@ -151,6 +162,7 @@ function createWindow() {
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     title: 'Qortium Home',
+    icon: getWindowIconPath(),
     backgroundColor: '#121515',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

@@ -44,6 +44,7 @@ more broadly.
 - Show the active tab's selected wallet as an avatar or initial in the top bar.
 - Use in-session Back and Forward navigation history.
 - Build a Linux x64 AppImage and a Windows x64 portable executable.
+- Package Linux and Windows builds with the Qortium Home app icon.
 
 ## Planned Work
 
