@@ -165,20 +165,27 @@ function BrowserTabs({
   const suppressedClickTabIdRef = useRef<string | null>(null);
   const tabElementsRef = useRef(new Map<string, HTMLDivElement>());
 
-  function clearDragState(event?: PointerEvent<HTMLElement>) {
+  function suppressNextTabClick(tabId: string) {
+    suppressedClickTabIdRef.current = tabId;
+    window.setTimeout(() => {
+      if (suppressedClickTabIdRef.current === tabId) {
+        suppressedClickTabIdRef.current = null;
+      }
+    }, 0);
+  }
+
+  function clearDragState(event?: PointerEvent<HTMLElement>, selectTabOnRelease = false) {
     if (event && dragStateRef.current?.pointerId !== event.pointerId) {
       return;
     }
 
-    if (dragStateRef.current?.hasReordered) {
-      const tabId = dragStateRef.current.tabId;
+    const dragState = dragStateRef.current;
 
-      suppressedClickTabIdRef.current = tabId;
-      window.setTimeout(() => {
-        if (suppressedClickTabIdRef.current === tabId) {
-          suppressedClickTabIdRef.current = null;
-        }
-      }, 0);
+    if (dragState?.hasReordered) {
+      suppressNextTabClick(dragState.tabId);
+    } else if (dragState && selectTabOnRelease) {
+      onSelectTab(dragState.tabId);
+      suppressNextTabClick(dragState.tabId);
     }
 
     if (event?.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -307,7 +314,7 @@ function BrowserTabs({
               onPointerCancel={clearDragState}
               onPointerDown={(event) => handlePointerDown(event, tab.id)}
               onPointerMove={handlePointerMove}
-              onPointerUp={clearDragState}
+              onPointerUp={(event) => clearDragState(event, true)}
             >
               <button
                 className="top-bar__tab-select"
