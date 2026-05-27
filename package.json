@@ -108,6 +108,13 @@
       "category": "public.app-category.utilities",
       "identity": null
     },
+    "dmg": {
+      "backgroundColor": "#ffffff",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
     "win": {
       "icon": "build/icon.ico",
       "target": [
