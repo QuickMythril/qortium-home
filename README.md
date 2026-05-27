@@ -27,6 +27,10 @@ more broadly.
 - Select, unlock, lock, and remove saved wallets.
 - Show node status for the configured node.
 - Switch between a local node, Previewnet network discovery, and one saved custom node.
+- Install the latest Qortium Core prerelease from GitHub into a desktop managed
+  app-data folder.
+- Start and stop the managed desktop Previewnet Core when Java 17 or newer is
+  available.
 - Browse QDN services, names, and resources from `qdn://` URLs.
 - Load `APP` and `WEBSITE` resources in an embedded viewer.
 - Load image-style QDN resources such as `IMAGE`, `THUMBNAIL`, and
@@ -52,7 +56,8 @@ more broadly.
 - Additional derived addresses from the same wallet.
 - `qdnRequest` support with approval prompts for account access and signing.
 - Service-specific viewers for more QDN service types.
-- Qortium Core download, setup, and local start/status management.
+- Automatic Java runtime download for managed desktop Core.
+- Stable/mainnet Core profile selection and richer Core maintenance controls.
 - Signed Android APK/AAB release packaging and Android wallet file flows.
 - Code signing and release verification for production builds.
 
@@ -179,6 +184,12 @@ Desktop still defaults to a local node at `http://127.0.0.1:24891`, but users
 without a local node can also choose Previewnet network discovery from the node
 settings menu. Local node mode keeps using the local API key for authorization
 calls; network discovery is intended for public read-only browsing.
+
+Desktop can also manage a local Qortium Core Previewnet install from the node
+settings menu. The first managed Core flow checks GitHub releases for the
+current `qortium-preview.zip` prerelease asset, installs it under Qortium Home's
+app data folder, detects Java 17 or newer, and runs the bundled preview start
+and stop scripts. Java is not downloaded automatically yet.
 
 ## QDN Preview Test Data
 

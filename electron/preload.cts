@@ -19,6 +19,25 @@ contextBridge.exposeInMainWorld('qortiumHome', {
     removeWallet: (accountId: string, password?: string) =>
       ipcRenderer.invoke('accounts:removeWallet', accountId, password),
   },
+  core: {
+    checkReleases: () => ipcRenderer.invoke('core:checkReleases'),
+    getStatus: () => ipcRenderer.invoke('core:getStatus'),
+    install: (request: { channel?: 'prerelease' | 'stable' }) =>
+      ipcRenderer.invoke('core:install', request),
+    start: () => ipcRenderer.invoke('core:start'),
+    stop: () => ipcRenderer.invoke('core:stop'),
+    onProgress: (callback: (progress: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => {
+        callback(progress);
+      };
+
+      ipcRenderer.on('core:progress', listener);
+
+      return () => {
+        ipcRenderer.removeListener('core:progress', listener);
+      };
+    },
+  },
   node: {
     getSettings: () => ipcRenderer.invoke('node:getSettings'),
     saveSettings: (request: { customUrl?: string; mode: 'custom' | 'local' | 'network' }) =>
