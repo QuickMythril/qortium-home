@@ -114,6 +114,7 @@ type QortiumCoreJavaStatus = {
   available: boolean;
   majorVersion: number | null;
   path: string;
+  source: 'managed' | 'missing' | 'system' | 'unsupported';
   version: string | null;
 };
 
@@ -226,6 +227,7 @@ interface Window {
       checkReleases: () => Promise<QortiumCoreReleases>;
       getStatus: () => Promise<QortiumCoreStatus>;
       install: (request: { channel?: QortiumCoreChannel }) => Promise<QortiumCoreStatus>;
+      installJava: () => Promise<QortiumCoreStatus>;
       onProgress: (callback: (progress: QortiumCoreProgress) => void) => () => void;
       start: () => Promise<QortiumCoreStatus>;
       stop: () => Promise<QortiumCoreStatus>;

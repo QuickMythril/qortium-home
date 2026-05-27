@@ -1,18 +1,20 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { createHash } from 'node:crypto';
 import { createWriteStream, existsSync } from 'node:fs';
-import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 import extract from 'extract-zip';
+import { extract as extractTar } from 'tar';
 
 const CORE_REPOSITORY = 'QuickMythril/qortium';
 const GITHUB_API_BASE_URL = `https://api.github.com/repos/${CORE_REPOSITORY}`;
 const GITHUB_USER_AGENT = 'QortiumHome/1.0';
 const MANAGED_CORE_DIR = 'managed-core';
 const CURRENT_CORE_FILE = 'current.json';
+const CURRENT_JAVA_FILE = 'current-java.json';
 const LOCAL_CORE_API_URL = 'http://127.0.0.1:24891';
 const LOCAL_CORE_STATUS_PATH = '/admin/status';
 const START_TIMEOUT_MS = 120_000;
@@ -20,8 +22,20 @@ const STOP_TIMEOUT_MS = 45_000;
 const STATUS_TIMEOUT_MS = 2_500;
 const POLL_INTERVAL_MS = 2_000;
 const MIN_JAVA_MAJOR_VERSION = 17;
+const JAVA_DISTRIBUTION = 'temurin';
+const ADOPTIUM_JAVA_API_BASE_URL = 'https://api.adoptium.net/v3/binary/latest';
 
 type CoreChannel = 'prerelease' | 'stable';
+type JavaArchiveType = 'tar.gz' | 'zip';
+type JavaSource = 'managed' | 'missing' | 'system' | 'unsupported';
+
+type JavaPlatform = {
+  apiArch: string;
+  apiOs: string;
+  arch: string;
+  archiveType: JavaArchiveType;
+  platform: NodeJS.Platform;
+};
 
 type GithubAsset = {
   browser_download_url?: unknown;
@@ -44,6 +58,13 @@ type CoreReleaseAsset = {
   digest: string | null;
   downloadUrl: string;
   name: string;
+  size: number;
+};
+
+type DownloadAsset = CoreReleaseAsset;
+
+type DownloadResult = {
+  digest: string;
   size: number;
 };
 
@@ -78,10 +99,29 @@ type InstalledCore = {
   tagName: string;
 };
 
+type ManagedJava = {
+  apiArch: string;
+  apiOs: string;
+  arch: string;
+  archiveName: string;
+  archiveSize: number;
+  archiveType: JavaArchiveType;
+  digest: string;
+  distribution: string;
+  downloadUrl: string;
+  installedAt: string;
+  installPath: string;
+  javaPath: string;
+  majorVersion: number;
+  platform: NodeJS.Platform;
+  version: string;
+};
+
 type JavaStatus = {
   available: boolean;
   majorVersion: number | null;
   path: string;
+  source: JavaSource;
   version: string | null;
 };
 
@@ -133,8 +173,20 @@ function getCoreVersionsPath() {
   return path.join(getCoreBasePath(), 'versions');
 }
 
+function getJavaBasePath() {
+  return path.join(getCoreBasePath(), 'java');
+}
+
+function getJavaVersionsPath() {
+  return path.join(getJavaBasePath(), 'versions');
+}
+
 function getCurrentCorePath() {
   return path.join(getCoreBasePath(), CURRENT_CORE_FILE);
+}
+
+function getCurrentJavaPath() {
+  return path.join(getJavaBasePath(), CURRENT_JAVA_FILE);
 }
 
 function sanitizePathSegment(value: string) {
@@ -347,6 +399,100 @@ async function writeInstalledCore(installedCore: InstalledCore) {
   await writeFile(getCurrentCorePath(), `${JSON.stringify(installedCore, null, 2)}\n`, 'utf8');
 }
 
+function getJavaPlatform(): JavaPlatform | null {
+  const platform = process.platform;
+  const arch = process.arch;
+  const apiOs = platform === 'darwin' ? 'mac' : platform === 'win32' ? 'windows' : platform;
+  const apiArch = arch === 'arm64' ? 'aarch64' : arch;
+
+  if (platform === 'win32' && arch === 'x64') {
+    return {
+      apiArch,
+      apiOs,
+      arch,
+      archiveType: 'zip',
+      platform,
+    };
+  }
+
+  if ((platform === 'linux' || platform === 'darwin') && (arch === 'x64' || arch === 'arm64')) {
+    return {
+      apiArch,
+      apiOs,
+      arch,
+      archiveType: 'tar.gz',
+      platform,
+    };
+  }
+
+  return null;
+}
+
+function getJavaArchiveExtension(archiveType: JavaArchiveType) {
+  return archiveType === 'zip' ? 'zip' : 'tar.gz';
+}
+
+function getJavaDownloadUrl(javaPlatform: JavaPlatform) {
+  return `${ADOPTIUM_JAVA_API_BASE_URL}/${MIN_JAVA_MAJOR_VERSION}/ga/${javaPlatform.apiOs}/${javaPlatform.apiArch}/jre/hotspot/normal/eclipse`;
+}
+
+function parseInstalledJava(value: unknown): ManagedJava | null {
+  if (!isObject(value)) {
+    return null;
+  }
+
+  const managedJava = value as Partial<ManagedJava>;
+  const installPath = getString(managedJava.installPath);
+  const javaPath = getString(managedJava.javaPath);
+  const version = getString(managedJava.version);
+  const majorVersion = getNumber(managedJava.majorVersion);
+
+  if (!installPath || !javaPath || !version || majorVersion < MIN_JAVA_MAJOR_VERSION) {
+    return null;
+  }
+
+  const archiveType = managedJava.archiveType === 'zip' ? 'zip' : 'tar.gz';
+  const platform = getString(managedJava.platform) as NodeJS.Platform;
+
+  return {
+    apiArch: getString(managedJava.apiArch),
+    apiOs: getString(managedJava.apiOs),
+    arch: getString(managedJava.arch),
+    archiveName: getString(managedJava.archiveName),
+    archiveSize: getNumber(managedJava.archiveSize),
+    archiveType,
+    digest: getString(managedJava.digest),
+    distribution: getString(managedJava.distribution) || JAVA_DISTRIBUTION,
+    downloadUrl: getString(managedJava.downloadUrl),
+    installedAt: getString(managedJava.installedAt),
+    installPath,
+    javaPath,
+    majorVersion,
+    platform: platform || process.platform,
+    version,
+  };
+}
+
+async function readInstalledJava(): Promise<ManagedJava | null> {
+  try {
+    const parsedJava: unknown = JSON.parse(await readFile(getCurrentJavaPath(), 'utf8'));
+    const installedJava = parseInstalledJava(parsedJava);
+
+    if (installedJava && existsSync(installedJava.installPath) && existsSync(installedJava.javaPath)) {
+      return installedJava;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function writeInstalledJava(installedJava: ManagedJava) {
+  await mkdir(getJavaBasePath(), { recursive: true });
+  await writeFile(getCurrentJavaPath(), `${JSON.stringify(installedJava, null, 2)}\n`, 'utf8');
+}
+
 function parseJavaMajorVersion(version: string) {
   const [first, second] = version.split('.');
   const majorVersion = first === '1' ? Number(second) : Number(first);
@@ -354,10 +500,11 @@ function parseJavaMajorVersion(version: string) {
   return Number.isFinite(majorVersion) ? majorVersion : null;
 }
 
-function detectJavaVersion(command = 'java'): Promise<JavaStatus> {
+function detectJavaVersion(command = 'java', source: JavaSource = 'system'): Promise<JavaStatus> {
   return new Promise((resolve) => {
+    const useShell = command === 'java' && process.platform === 'win32';
     const child = spawn(command, ['-version'], {
-      shell: process.platform === 'win32',
+      shell: useShell,
       windowsHide: true,
     });
     const chunks: Buffer[] = [];
@@ -369,6 +516,7 @@ function detectJavaVersion(command = 'java'): Promise<JavaStatus> {
         available: false,
         majorVersion: null,
         path: command,
+        source,
         version: null,
       });
     });
@@ -381,10 +529,56 @@ function detectJavaVersion(command = 'java'): Promise<JavaStatus> {
         available: typeof majorVersion === 'number' && majorVersion >= MIN_JAVA_MAJOR_VERSION,
         majorVersion,
         path: command,
+        source,
         version,
       });
     });
   });
+}
+
+async function getJavaStatus(): Promise<JavaStatus> {
+  const installedJava = await readInstalledJava();
+  let managedStatus: JavaStatus | null = null;
+
+  if (installedJava) {
+    managedStatus = await detectJavaVersion(installedJava.javaPath, 'managed');
+
+    if (managedStatus.available) {
+      return managedStatus;
+    }
+  }
+
+  const systemJava = await detectJavaVersion('java', 'system');
+
+  if (systemJava.available) {
+    return systemJava;
+  }
+
+  if (managedStatus?.version) {
+    return {
+      ...managedStatus,
+      source: 'unsupported',
+    };
+  }
+
+  return {
+    ...systemJava,
+    source: systemJava.version ? 'unsupported' : 'missing',
+  };
+}
+
+function getJavaRuntimeEnv(java: JavaStatus) {
+  if (java.source !== 'managed' || !java.path) {
+    return undefined;
+  }
+
+  const javaBinPath = path.dirname(java.path);
+
+  return {
+    ...process.env,
+    JAVA_HOME: path.dirname(javaBinPath),
+    PATH: `${javaBinPath}${path.delimiter}${process.env.PATH ?? ''}`,
+  };
 }
 
 async function fetchLocalCoreStatus(): Promise<CoreRuntimeStatus> {
@@ -424,7 +618,7 @@ async function fetchLocalCoreStatus(): Promise<CoreRuntimeStatus> {
 async function getStatus(): Promise<CoreStatus> {
   const [installed, java, runtime] = await Promise.all([
     readInstalledCore(),
-    detectJavaVersion(),
+    getJavaStatus(),
     fetchLocalCoreStatus(),
   ]);
 
@@ -436,7 +630,11 @@ async function getStatus(): Promise<CoreStatus> {
   };
 }
 
-async function downloadFile(asset: CoreReleaseAsset, destinationPath: string) {
+async function downloadFile(
+  asset: DownloadAsset,
+  destinationPath: string,
+  description = 'Core asset',
+): Promise<DownloadResult> {
   const response = await fetch(asset.downloadUrl, {
     headers: {
       Accept: 'application/octet-stream,*/*',
@@ -447,7 +645,7 @@ async function downloadFile(asset: CoreReleaseAsset, destinationPath: string) {
   if (!response.ok || !response.body) {
     const text = await response.text().catch(() => '');
 
-    throw new Error(text || `Core download failed with HTTP ${response.status}.`);
+    throw new Error(text || `${description} download failed with HTTP ${response.status}.`);
   }
 
   const totalBytes = Number(response.headers.get('content-length')) || asset.size;
@@ -478,8 +676,13 @@ async function downloadFile(asset: CoreReleaseAsset, destinationPath: string) {
 
   if (asset.digest && asset.digest !== digest) {
     await rm(destinationPath, { force: true });
-    throw new Error('Downloaded Core asset did not match the GitHub asset digest.');
+    throw new Error(`Downloaded ${description} did not match the expected asset digest.`);
   }
+
+  return {
+    digest,
+    size: totalBytes || receivedBytes,
+  };
 }
 
 async function findExtractedCorePaths(versionPath: string) {
@@ -519,6 +722,151 @@ async function chmodPreviewScripts(previewPath: string) {
     if (existsSync(scriptPath)) {
       await chmod(scriptPath, 0o755);
     }
+  }
+}
+
+async function findJavaExecutable(installPath: string) {
+  const executableName = process.platform === 'win32' ? 'java.exe' : 'java';
+  const candidates = [
+    path.join(installPath, 'bin', executableName),
+    path.join(installPath, 'Contents', 'Home', 'bin', executableName),
+  ];
+
+  const entries = await readdir(installPath, { withFileTypes: true }).catch(() => []);
+
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const childPath = path.join(installPath, entry.name);
+
+      candidates.push(
+        path.join(childPath, 'bin', executableName),
+        path.join(childPath, 'Contents', 'Home', 'bin', executableName),
+      );
+    }
+  }
+
+  const javaPath = candidates.find((candidate) => existsSync(candidate));
+
+  if (!javaPath) {
+    throw new Error('Installed Java runtime did not contain a java executable.');
+  }
+
+  return javaPath;
+}
+
+async function chmodJavaExecutable(javaPath: string) {
+  if (process.platform !== 'win32') {
+    await chmod(javaPath, 0o755);
+  }
+}
+
+async function extractJavaArchive(
+  archiveType: JavaArchiveType,
+  downloadPath: string,
+  destinationPath: string,
+) {
+  if (archiveType === 'zip') {
+    await extract(downloadPath, { dir: destinationPath });
+    return;
+  }
+
+  await extractTar({
+    cwd: destinationPath,
+    file: downloadPath,
+  });
+}
+
+async function installJava() {
+  const javaPlatform = getJavaPlatform();
+
+  if (!javaPlatform) {
+    throw new Error(`Managed Java is not available for ${process.platform}/${process.arch}.`);
+  }
+
+  const archiveExtension = getJavaArchiveExtension(javaPlatform.archiveType);
+  const archiveName = `${JAVA_DISTRIBUTION}-${MIN_JAVA_MAJOR_VERSION}-${javaPlatform.apiOs}-${javaPlatform.apiArch}.${archiveExtension}`;
+  const archive: DownloadAsset = {
+    digest: null,
+    downloadUrl: getJavaDownloadUrl(javaPlatform),
+    name: archiveName,
+    size: 0,
+  };
+  const downloadPath = path.join(getCoreDownloadsPath(), archiveName);
+  const stagingPath = path.join(
+    getJavaVersionsPath(),
+    sanitizePathSegment(`_staging-${Date.now()}-${javaPlatform.platform}-${javaPlatform.arch}`),
+  );
+
+  await mkdir(getCoreDownloadsPath(), { recursive: true });
+  await mkdir(getJavaVersionsPath(), { recursive: true });
+  await rm(stagingPath, { recursive: true, force: true });
+  await mkdir(stagingPath, { recursive: true });
+
+  try {
+    const download = await downloadFile(archive, downloadPath, 'Java runtime');
+
+    publishProgress({
+      action: 'extracting',
+      kind: 'info',
+      message: 'Extracting Java runtime.',
+      percent: 0,
+    });
+    await extractJavaArchive(javaPlatform.archiveType, downloadPath, stagingPath);
+
+    const stagingJavaPath = await findJavaExecutable(stagingPath);
+
+    await chmodJavaExecutable(stagingJavaPath);
+
+    const javaStatus = await detectJavaVersion(stagingJavaPath, 'managed');
+
+    if (!javaStatus.available || !javaStatus.version || !javaStatus.majorVersion) {
+      throw new Error('Downloaded Java runtime is not Java 17 or newer.');
+    }
+
+    const finalPath = path.join(
+      getJavaVersionsPath(),
+      sanitizePathSegment(
+        `${JAVA_DISTRIBUTION}-${MIN_JAVA_MAJOR_VERSION}-${javaStatus.version}-${javaPlatform.platform}-${javaPlatform.arch}`,
+      ),
+    );
+
+    await rm(finalPath, { recursive: true, force: true });
+    await rename(stagingPath, finalPath);
+
+    const javaPath = await findJavaExecutable(finalPath);
+
+    await chmodJavaExecutable(javaPath);
+    await writeInstalledJava({
+      apiArch: javaPlatform.apiArch,
+      apiOs: javaPlatform.apiOs,
+      arch: javaPlatform.arch,
+      archiveName,
+      archiveSize: download.size,
+      archiveType: javaPlatform.archiveType,
+      digest: download.digest,
+      distribution: JAVA_DISTRIBUTION,
+      downloadUrl: archive.downloadUrl,
+      installedAt: new Date().toISOString(),
+      installPath: finalPath,
+      javaPath,
+      majorVersion: javaStatus.majorVersion,
+      platform: javaPlatform.platform,
+      version: javaStatus.version,
+    });
+
+    publishProgress({
+      action: 'idle',
+      kind: 'success',
+      message: `Installed Java ${javaStatus.version}.`,
+      percent: 100,
+    });
+
+    return await getStatus();
+  } catch (error) {
+    await rm(stagingPath, { recursive: true, force: true });
+    throw error;
+  } finally {
+    await rm(downloadPath, { force: true });
   }
 }
 
@@ -591,17 +939,24 @@ async function installCore(request: CoreInstallRequest) {
   return await getStatus();
 }
 
-async function runScript(command: string, args: string[], cwd: string) {
+async function runScript(
+  command: string,
+  args: string[],
+  cwd: string,
+  env?: NodeJS.ProcessEnv,
+) {
   return new Promise<void>((resolve, reject) => {
     let stderr = '';
     const child =
       process.platform === 'win32'
         ? spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"${command}" ${args.join(' ')}`], {
             cwd,
+            env,
             windowsHide: true,
           })
         : spawn(command, args, {
             cwd,
+            env,
             windowsHide: true,
           });
 
@@ -661,7 +1016,7 @@ async function startCore() {
     throw new Error('Install Qortium Core before starting it.');
   }
 
-  const java = await detectJavaVersion();
+  const java = await getJavaStatus();
 
   if (!java.available) {
     throw new Error('Java 17 or newer is required before Qortium Core can start.');
@@ -685,7 +1040,12 @@ async function startCore() {
     message: 'Starting Qortium Core.',
     percent: 5,
   });
-  await runScript(startScript, ['--participant', '--headless'], installedCore.previewPath);
+  await runScript(
+    startScript,
+    ['--participant', '--headless'],
+    installedCore.previewPath,
+    getJavaRuntimeEnv(java),
+  );
   await waitForRuntimeState(true, START_TIMEOUT_MS, 'starting');
 
   publishProgress({
@@ -723,7 +1083,12 @@ async function stopCore() {
     message: 'Stopping Qortium Core.',
     percent: 5,
   });
-  await runScript(stopScript, [], installedCore.previewPath);
+  await runScript(
+    stopScript,
+    [],
+    installedCore.previewPath,
+    getJavaRuntimeEnv(await getJavaStatus()),
+  );
   await waitForRuntimeState(false, STOP_TIMEOUT_MS, 'stopping');
 
   publishProgress({
@@ -740,6 +1105,7 @@ export function registerCoreManagerIpcHandlers() {
   ipcMain.handle('core:checkReleases', () => checkReleases());
   ipcMain.handle('core:getStatus', () => getStatus());
   ipcMain.handle('core:install', (_event, request: CoreInstallRequest = {}) => installCore(request));
+  ipcMain.handle('core:installJava', () => installJava());
   ipcMain.handle('core:start', () => startCore());
   ipcMain.handle('core:stop', () => stopCore());
 }

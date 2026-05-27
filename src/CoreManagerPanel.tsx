@@ -11,7 +11,14 @@ type CoreMessage = {
   text: string;
 } | null;
 
-type BusyAction = 'checking' | 'installing-prerelease' | 'installing-stable' | 'starting' | 'stopping' | null;
+type BusyAction =
+  | 'checking'
+  | 'installing-java'
+  | 'installing-prerelease'
+  | 'installing-stable'
+  | 'starting'
+  | 'stopping'
+  | null;
 
 function formatError(error: unknown) {
   if (!(error instanceof Error)) {
@@ -34,7 +41,18 @@ function formatJava(javaStatus: QortiumCoreJavaStatus | null) {
     return 'Missing';
   }
 
-  return javaStatus.available ? `Java ${javaStatus.version}` : `Java ${javaStatus.version} unsupported`;
+  const source =
+    javaStatus.source === 'managed'
+      ? 'managed'
+      : javaStatus.source === 'system'
+        ? 'system'
+        : '';
+
+  if (javaStatus.available) {
+    return source ? `Java ${javaStatus.version} (${source})` : `Java ${javaStatus.version}`;
+  }
+
+  return `Java ${javaStatus.version} unsupported`;
 }
 
 function formatRuntime(runtime: QortiumCoreRuntimeStatus | null) {
@@ -125,6 +143,7 @@ export function CoreManagerPanel({
   const progressPercent = getProgressPercent(progress);
   const canInstallPrerelease = !!releases?.prerelease.available;
   const canInstallStable = !!releases?.stable.available;
+  const canInstallJava = !!status && !status.java.available && status.supported;
   const canStart = !!status?.installed && !!status.java.available && !status.runtime.running;
   const canStop = !!status?.installed && !!status.runtime.running;
 
@@ -169,6 +188,28 @@ export function CoreManagerPanel({
       setMessage({
         kind: 'success',
         text: `Installed ${nextStatus.installed?.tagName ?? 'Qortium Core'}.`,
+      });
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function installJava() {
+    setBusyAction('installing-java');
+    setMessage(null);
+
+    try {
+      const nextStatus = await coreApi.installJava();
+
+      setStatus(nextStatus);
+      setMessage({
+        kind: 'success',
+        text: `Installed ${formatJava(nextStatus.java)}.`,
       });
     } catch (error) {
       setMessage({
@@ -270,6 +311,15 @@ export function CoreManagerPanel({
       ) : null}
 
       <div className="core-manager__actions">
+        <button
+          className="button button--secondary"
+          disabled={isBusy || !canInstallJava}
+          type="button"
+          onClick={installJava}
+        >
+          <Download aria-hidden="true" size={18} strokeWidth={2} />
+          {busyAction === 'installing-java' ? 'Installing Java' : 'Install Java'}
+        </button>
         <button
           className="button button--secondary"
           disabled={isBusy || !canInstallPrerelease}

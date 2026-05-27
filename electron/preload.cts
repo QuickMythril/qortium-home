@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('qortiumHome', {
     getStatus: () => ipcRenderer.invoke('core:getStatus'),
     install: (request: { channel?: 'prerelease' | 'stable' }) =>
       ipcRenderer.invoke('core:install', request),
+    installJava: () => ipcRenderer.invoke('core:installJava'),
     start: () => ipcRenderer.invoke('core:start'),
     stop: () => ipcRenderer.invoke('core:stop'),
     onProgress: (callback: (progress: unknown) => void) => {
