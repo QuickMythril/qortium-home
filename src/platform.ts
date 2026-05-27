@@ -12,6 +12,8 @@ const PREVIEWNET_SEED_NODE_API_URLS = [
   'http://146.103.42.59:24891',
   'http://185.207.104.78:24891',
 ];
+const PUBLIC_READ_PROBE_PATH =
+  '/arbitrary/resources/search?mode=ALL&limit=1&includestatus=false&includemetadata=false';
 const REQUEST_TIMEOUT_MS = 30_000;
 const DISCOVERY_TIMEOUT_MS = 5_000;
 const DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
@@ -35,6 +37,7 @@ type DiscoveryCandidate = {
   nodeApiUrl: string;
   peerCount: number;
   status: unknown;
+  supportsPublicReads: boolean;
 };
 
 function isAndroid() {
@@ -407,6 +410,16 @@ async function fetchKnownPeerNodeApiUrls(seedNodeApiUrl: string) {
   }
 }
 
+async function probePublicReadAccess(nodeApiUrl: string) {
+  try {
+    const response = await requestNode(nodeApiUrl, PUBLIC_READ_PROBE_PATH, 'json', DISCOVERY_TIMEOUT_MS);
+
+    return response.status >= 200 && response.status < 300;
+  } catch {
+    return false;
+  }
+}
+
 async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidate | null> {
   try {
     const response = await requestNode(nodeApiUrl, '/admin/status', 'json', DISCOVERY_TIMEOUT_MS);
@@ -422,6 +435,7 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
       isSeed: isPreviewnetSeedNodeApiUrl(nodeApiUrl),
       isSynchronizing: getStatusIsSynchronizing(response.data),
       peerCount: getStatusPeerCount(response.data),
+      supportsPublicReads: await probePublicReadAccess(nodeApiUrl),
     };
   } catch {
     return null;
@@ -430,6 +444,10 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
 
 function rankDiscoveryCandidates(candidates: DiscoveryCandidate[]) {
   return [...candidates].sort((first, second) => {
+    if (first.supportsPublicReads !== second.supportsPublicReads) {
+      return first.supportsPublicReads ? -1 : 1;
+    }
+
     if (first.isSeed !== second.isSeed) {
       return first.isSeed ? 1 : -1;
     }
@@ -453,7 +471,7 @@ async function discoverPreviewnetNode(forceRefresh = false): Promise<DiscoveryCa
     if (cache) {
       const cachedCandidate = await probeNodeCandidate(cache.nodeApiUrl);
 
-      if (cachedCandidate && !cachedCandidate.isSeed) {
+      if (cachedCandidate?.supportsPublicReads) {
         return cachedCandidate;
       }
     }
@@ -522,7 +540,7 @@ function getNodeUnavailableMessage(nodeApiUrl: string) {
 }
 
 function getNetworkRestrictionMessage() {
-  return 'The selected Previewnet public seed only allows status and peer discovery. Use a local Core or a custom node for QDN browsing and future write workflows.';
+  return 'The selected Previewnet network node is public read-only and does not expose that endpoint. Use a local Core or trusted custom node for write, admin, or private API workflows.';
 }
 
 function getNodeApiUrlBase(nodeApiUrl: string) {
@@ -840,7 +858,11 @@ function createFallbackApi(): PlatformApi {
           getNodeApiPath(request.path, nodeApiUrl),
           'text',
         );
-        const body = stringifyResponseData(response.data);
+        const rawBody = stringifyResponseData(response.data);
+        const body =
+          response.status === 403 && settings.mode === 'network'
+            ? getNetworkRestrictionMessage()
+            : rawBody;
         const contentLength = getContentLength(response);
         const contentType = getContentType(response);
         const bodyLength = getByteLength(body);

@@ -58,15 +58,15 @@ more broadly.
 
 ## Preview Limits
 
-Previewnet network discovery uses public seed APIs that are intentionally
-read-only. They are suitable for status checks, peer discovery, QDN browsing,
-and read-only API inspection, but restricted write endpoints should use a local
-Core or a custom node controlled by the user.
+Previewnet network discovery uses public read-only APIs. They are suitable for
+status checks, peer discovery, QDN browsing, and read-only API inspection, but
+restricted write, admin, and private endpoints should use a local Core or a
+custom node controlled by the user.
 
-When network discovery is selected, Home uses the public seeds to find peers and
-prefers a reachable non-seed API peer for general browsing when one is
-available. If only seeds are reachable, QDN/resource requests may be limited by
-the seed's restricted API policy.
+When network discovery is selected, Home starts from the public seeds, asks for
+known peers, probes candidates for public QDN/read API support, and prefers a
+reachable node that can answer public QDN resource searches. Home does not send
+the local API key while using Previewnet network mode.
 
 Qortium Home does not yet expose chat send, name registration, QDN publish, QDN
 delete, or group join workflows. Those actions are planned for a later
@@ -197,15 +197,16 @@ npm run icons:android
 Android currently connects to existing nodes only. By default it uses Previewnet
 network discovery: it starts from the public seed API URLs, calls `/peers/known`,
 converts discovered peer addresses to candidate API URLs, and uses a reachable
-node for read-only QDN/API browsing. This requires seed nodes to expose public
-read-only API access for `/admin/status` and `/peers/known`. Users can still
-choose a custom LAN or remote node URL. Android wallet file creation/loading and
-QDN file downloads are intentionally still desktop-only.
+node for read-only QDN/API browsing. Candidate nodes are preferred when they
+answer both `/admin/status` and a public QDN resource-search probe. Users can
+still choose a custom LAN or remote node URL. Android wallet file
+creation/loading and QDN file downloads are intentionally still desktop-only.
 
 Desktop still defaults to a local node at `http://127.0.0.1:24891`, but users
 without a local node can also choose Previewnet network discovery from the node
 settings menu. Local node mode keeps using the local API key for authorization
-calls; network discovery is intended for public read-only browsing.
+calls; network discovery is intended for public read-only browsing and direct
+inspection of public `GET` endpoints.
 
 Desktop can also manage a local Qortium Core Previewnet install from the node
 settings menu. The first managed Core flow checks GitHub releases for the

@@ -278,7 +278,7 @@ function getNodeUnavailableMessage(nodeApiUrl: string) {
 }
 
 function getNetworkRestrictionMessage() {
-  return 'The selected Previewnet public seed only allows status and peer discovery. Use a local Core or a custom node for QDN browsing and future write workflows.';
+  return 'The selected Previewnet network node is public read-only and does not expose that endpoint. Use a local Core or trusted custom node for write, admin, or private API workflows.';
 }
 
 function getNodeApiKey() {
@@ -472,7 +472,7 @@ export function registerQdnIpcHandlers() {
   ipcMain.handle('qdn:fetchNodeApi', async (_event, request: NodeApiRequest) => {
     const apiPath = getNodeApiPath(request.path, 'http://127.0.0.1');
     const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
-    const { response } = await fetchConfiguredNode(apiPath);
+    const { connection, response } = await fetchConfiguredNode(apiPath);
     const contentLength = getContentLength(response);
     const contentType = response.headers.get('content-type') ?? '';
 
@@ -488,7 +488,11 @@ export function registerQdnIpcHandlers() {
       };
     }
 
-    const body = await response.text();
+    const rawBody = await response.text();
+    const body =
+      response.status === 403 && connection.mode === 'network'
+        ? getNetworkRestrictionMessage()
+        : rawBody;
     const bodyLength = Buffer.byteLength(body, 'utf8');
 
     if (maxBytes > 0 && bodyLength > maxBytes) {

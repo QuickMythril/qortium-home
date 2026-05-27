@@ -403,7 +403,8 @@ export function NodeStatusButton({
             <p className="node-status__preset">
               <span>Network</span>
               <span>
-                Read-only discovery from {nodeSettings.networkSeedUrls.length.toLocaleString()} seeds
+                Public read-only browsing through {nodeSettings.networkSeedUrls.length.toLocaleString()}{' '}
+                seeds
               </span>
             </p>
           ) : (

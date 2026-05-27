@@ -67,16 +67,18 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - One saved custom node address entered by the user.
   - The selected node should persist across app restarts.
   - Unreachable custom node URLs may still be saved, with the UI showing the node as unavailable until it can connect.
-  - Previewnet public seed APIs are read-only and should not be presented as a
-    replacement for a local or user-controlled node when write workflows are
-    added.
+  - Previewnet network APIs are public read-only endpoints and should not be
+    presented as a replacement for a local or user-controlled node when write
+    workflows are added.
 - Desktop defaults to the local node but can use Previewnet network discovery when no local node is running.
 - Android should connect to existing nodes only. It does not need to download, install, or run Qortium Core locally in the initial direction.
 - Android defaults to Previewnet network discovery instead of a single hardcoded node.
-- Previewnet seed nodes should expose public read-only API access for `/admin/status` and `/peers/known` so mobile clients can discover usable API nodes.
-- Previewnet network discovery should prefer reachable non-seed API peers for
-  general browsing when available, using public seeds primarily for status and
-  peer discovery.
+- Previewnet network discovery should start from public seed APIs and
+  `/peers/known`, then probe seeds and discovered peers for public read-only QDN
+  and API access.
+- Previewnet network discovery should prefer reachable nodes that can answer
+  public QDN resource searches, while keeping write, admin, and private API
+  workflows on local or user-controlled nodes.
 - The first Android scaffold uses Capacitor, shares the React UI, and starts with node settings/status plus read-only QDN/API browsing while wallet file flows remain desktop-only.
 - Use `~/git/Qortal-Hub` only as a reference, not as the product to clone.
 - Target distributable builds:
@@ -169,7 +171,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Direct Qortal API endpoint viewing for read-only node API `GET` requests.
 - Preinstalled or externally managed core connection support.
 - Desktop local node preset for `http://127.0.0.1:24891`.
-- Android Previewnet network discovery through public seed APIs and `/peers/known`.
+- Android Previewnet network discovery through public seed APIs,
+  `/peers/known`, and public read-only QDN/API probing.
 - One saved custom node address configuration.
 - Displaying configured node status, connectivity, peer counts, and sync progress.
 - Desktop downloading and setting up Qortium Core from GitHub releases and prereleases.
@@ -249,7 +252,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
    - Selected account context for the active page.
 5. Add node connectivity configuration:
    - Desktop local node at `http://127.0.0.1:24891`.
-   - Android Previewnet network discovery from seed APIs and `/peers/known`.
+   - Android Previewnet network discovery from seed APIs, `/peers/known`, and
+     public QDN/API probes.
    - One saved custom node address.
    - Basic node status.
 6. Add direct API endpoint viewer.

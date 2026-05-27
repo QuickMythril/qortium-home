@@ -9,6 +9,8 @@ const PREVIEWNET_SEED_NODE_API_URLS = [
   'http://146.103.42.59:24891',
   'http://185.207.104.78:24891',
 ];
+const PUBLIC_READ_PROBE_PATH =
+  '/arbitrary/resources/search?mode=ALL&limit=1&includestatus=false&includemetadata=false';
 const DISCOVERY_TIMEOUT_MS = 5_000;
 const DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
 
@@ -31,6 +33,7 @@ type DiscoveryCandidate = {
   nodeApiUrl: string;
   peerCount: number;
   status: unknown;
+  supportsPublicReads: boolean;
 };
 
 type DiscoveryCache = {
@@ -326,6 +329,16 @@ async function fetchKnownPeerNodeApiUrls(seedNodeApiUrl: string) {
   }
 }
 
+async function probePublicReadAccess(nodeApiUrl: string) {
+  try {
+    const response = await fetchWithTimeout(`${nodeApiUrl}${PUBLIC_READ_PROBE_PATH}`);
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidate | null> {
   try {
     const response = await fetchWithTimeout(`${nodeApiUrl}/admin/status`);
@@ -343,6 +356,7 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
       isSeed: isPreviewnetSeedNodeApiUrl(nodeApiUrl),
       isSynchronizing: getStatusIsSynchronizing(status),
       peerCount: getStatusPeerCount(status),
+      supportsPublicReads: await probePublicReadAccess(nodeApiUrl),
     };
   } catch {
     return null;
@@ -351,6 +365,10 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
 
 function rankDiscoveryCandidates(candidates: DiscoveryCandidate[]) {
   return [...candidates].sort((first, second) => {
+    if (first.supportsPublicReads !== second.supportsPublicReads) {
+      return first.supportsPublicReads ? -1 : 1;
+    }
+
     if (first.isSeed !== second.isSeed) {
       return first.isSeed ? 1 : -1;
     }
@@ -371,7 +389,7 @@ async function discoverPreviewnetNode(forceRefresh = false): Promise<DiscoveryCa
   if (!forceRefresh && discoveryCache && discoveryCache.expiresAt > Date.now()) {
     const cachedCandidate = await probeNodeCandidate(discoveryCache.nodeApiUrl);
 
-    if (cachedCandidate && !cachedCandidate.isSeed) {
+    if (cachedCandidate?.supportsPublicReads) {
       return cachedCandidate;
     }
   }
