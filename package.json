@@ -52,6 +52,9 @@
     "vite": "^7.2.4",
     "wait-on": "^9.0.3"
   },
+  "overrides": {
+    "tmp": "0.2.6"
+  },
   "build": {
     "appId": "org.qortium.home",
     "productName": "Qortium Home",
