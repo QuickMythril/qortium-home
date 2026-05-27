@@ -130,14 +130,35 @@ export function CoreManagerPanel({
   }, [coreApi]);
 
   const detailRows = useMemo(
-    () => [
-      { label: 'Core', value: formatInstalledCore(status?.installed ?? null) },
-      { label: 'Java', value: formatJava(status?.java ?? null) },
-      { label: 'Runtime', value: formatRuntime(status?.runtime ?? null) },
-      { label: 'Local API', value: status?.runtime.localApiUrl ?? 'http://127.0.0.1:24891' },
-      { label: 'Stable', value: getReleaseLabel(releases?.stable) },
-      { label: 'Prerelease', value: getReleaseLabel(releases?.prerelease) },
-    ],
+    () => {
+      const rows = [
+        { label: 'Core', value: formatInstalledCore(status?.installed ?? null) },
+        { label: 'Java', value: formatJava(status?.java ?? null) },
+        { label: 'Runtime', value: formatRuntime(status?.runtime ?? null) },
+        { label: 'Local API', value: status?.runtime.localApiUrl ?? 'http://127.0.0.1:24891' },
+      ];
+
+      if (status?.installed?.logPaths) {
+        rows.push(
+          { label: 'Core log', value: status.installed.logPaths.appLogPath },
+          { label: 'Run log', value: status.installed.logPaths.launcherLogPath },
+        );
+
+        if (status.installed.logPaths.windowsErrorLogPath) {
+          rows.push({
+            label: 'Error log',
+            value: status.installed.logPaths.windowsErrorLogPath,
+          });
+        }
+      }
+
+      rows.push(
+        { label: 'Stable', value: getReleaseLabel(releases?.stable) },
+        { label: 'Prerelease', value: getReleaseLabel(releases?.prerelease) },
+      );
+
+      return rows;
+    },
     [releases, status],
   );
   const progressPercent = getProgressPercent(progress);

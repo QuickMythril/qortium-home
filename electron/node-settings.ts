@@ -26,6 +26,7 @@ type NodeSettingsRequest = {
 
 type DiscoveryCandidate = {
   height: number;
+  isSeed: boolean;
   isSynchronizing: boolean;
   nodeApiUrl: string;
   peerCount: number;
@@ -203,6 +204,18 @@ function normalizeCandidateNodeApiUrl(value: string) {
   return normalizedUrl.origin;
 }
 
+function isPreviewnetSeedNodeApiUrl(nodeApiUrl: string) {
+  try {
+    const normalizedNodeApiUrl = normalizeCandidateNodeApiUrl(nodeApiUrl);
+
+    return PREVIEWNET_SEED_NODE_API_URLS.map(normalizeCandidateNodeApiUrl).includes(
+      normalizedNodeApiUrl,
+    );
+  } catch {
+    return false;
+  }
+}
+
 function peerAddressToNodeApiUrl(value: unknown) {
   const address = getString(value);
 
@@ -327,6 +340,7 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
       nodeApiUrl,
       status,
       height: getStatusHeight(status),
+      isSeed: isPreviewnetSeedNodeApiUrl(nodeApiUrl),
       isSynchronizing: getStatusIsSynchronizing(status),
       peerCount: getStatusPeerCount(status),
     };
@@ -337,6 +351,10 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
 
 function rankDiscoveryCandidates(candidates: DiscoveryCandidate[]) {
   return [...candidates].sort((first, second) => {
+    if (first.isSeed !== second.isSeed) {
+      return first.isSeed ? 1 : -1;
+    }
+
     if (first.isSynchronizing !== second.isSynchronizing) {
       return first.isSynchronizing ? 1 : -1;
     }
@@ -353,7 +371,7 @@ async function discoverPreviewnetNode(forceRefresh = false): Promise<DiscoveryCa
   if (!forceRefresh && discoveryCache && discoveryCache.expiresAt > Date.now()) {
     const cachedCandidate = await probeNodeCandidate(discoveryCache.nodeApiUrl);
 
-    if (cachedCandidate) {
+    if (cachedCandidate && !cachedCandidate.isSeed) {
       return cachedCandidate;
     }
   }

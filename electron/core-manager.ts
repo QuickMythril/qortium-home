@@ -84,6 +84,12 @@ type CoreReleaseSummary =
       tagName: string;
     };
 
+type CoreLogPaths = {
+  appLogPath: string;
+  launcherLogPath: string;
+  windowsErrorLogPath?: string;
+};
+
 type InstalledCore = {
   assetName: string;
   assetSize: number;
@@ -94,6 +100,7 @@ type InstalledCore = {
   installPath: string;
   installedAt: string;
   jarPath: string;
+  logPaths: CoreLogPaths;
   name: string;
   previewPath: string;
   tagName: string;
@@ -189,6 +196,19 @@ function getCurrentJavaPath() {
   return path.join(getJavaBasePath(), CURRENT_JAVA_FILE);
 }
 
+function getCoreLogPaths(previewPath: string): CoreLogPaths {
+  const logPaths: CoreLogPaths = {
+    appLogPath: path.join(previewPath, 'qortium.log'),
+    launcherLogPath: path.join(previewPath, 'run.log'),
+  };
+
+  if (process.platform === 'win32') {
+    logPaths.windowsErrorLogPath = path.join(previewPath, 'run-error.log');
+  }
+
+  return logPaths;
+}
+
 function sanitizePathSegment(value: string) {
   return value.replace(/[^a-z0-9._-]/gi, '_') || 'core';
 }
@@ -203,6 +223,20 @@ function publishProgress(progress: CoreProgress) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Core action failed.';
+}
+
+function formatCoreLogPathList(logPaths: CoreLogPaths) {
+  return [
+    `Core log: ${logPaths.appLogPath}`,
+    `Launcher log: ${logPaths.launcherLogPath}`,
+    logPaths.windowsErrorLogPath ? `Windows error log: ${logPaths.windowsErrorLogPath}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function withCoreLogPaths(message: string, logPaths: CoreLogPaths) {
+  return `${message}\n${formatCoreLogPathList(logPaths)}`;
 }
 
 async function fetchGithubJson<T>(url: string) {
@@ -368,6 +402,7 @@ function parseInstalledCore(value: unknown): InstalledCore | null {
     installPath,
     installedAt: getString(installedCore.installedAt),
     jarPath,
+    logPaths: getCoreLogPaths(previewPath),
     name: getString(installedCore.name) || tagName,
     previewPath,
     tagName,
@@ -922,6 +957,7 @@ async function installCore(request: CoreInstallRequest) {
     installPath: corePaths.installPath,
     installedAt: new Date().toISOString(),
     jarPath: corePaths.jarPath,
+    logPaths: getCoreLogPaths(corePaths.previewPath),
     name: release.name,
     previewPath: corePaths.previewPath,
     tagName: release.tagName,
@@ -1031,7 +1067,12 @@ async function startCore() {
   const startScript = getStartScript(installedCore.previewPath);
 
   if (!existsSync(startScript)) {
-    throw new Error('The installed Core release is missing its preview start script.');
+    throw new Error(
+      withCoreLogPaths(
+        `The installed Core release is missing its preview start script at ${startScript}.`,
+        installedCore.logPaths,
+      ),
+    );
   }
 
   publishProgress({
@@ -1040,13 +1081,17 @@ async function startCore() {
     message: 'Starting Qortium Core.',
     percent: 5,
   });
-  await runScript(
-    startScript,
-    ['--participant', '--headless'],
-    installedCore.previewPath,
-    getJavaRuntimeEnv(java),
-  );
-  await waitForRuntimeState(true, START_TIMEOUT_MS, 'starting');
+  try {
+    await runScript(
+      startScript,
+      ['--participant', '--headless'],
+      installedCore.previewPath,
+      getJavaRuntimeEnv(java),
+    );
+    await waitForRuntimeState(true, START_TIMEOUT_MS, 'starting');
+  } catch (error) {
+    throw new Error(withCoreLogPaths(getErrorMessage(error), installedCore.logPaths));
+  }
 
   publishProgress({
     action: 'idle',
@@ -1074,7 +1119,12 @@ async function stopCore() {
   const stopScript = getStopScript(installedCore.previewPath);
 
   if (!existsSync(stopScript)) {
-    throw new Error('The installed Core release is missing its preview stop script.');
+    throw new Error(
+      withCoreLogPaths(
+        `The installed Core release is missing its preview stop script at ${stopScript}.`,
+        installedCore.logPaths,
+      ),
+    );
   }
 
   publishProgress({
@@ -1083,13 +1133,17 @@ async function stopCore() {
     message: 'Stopping Qortium Core.',
     percent: 5,
   });
-  await runScript(
-    stopScript,
-    [],
-    installedCore.previewPath,
-    getJavaRuntimeEnv(await getJavaStatus()),
-  );
-  await waitForRuntimeState(false, STOP_TIMEOUT_MS, 'stopping');
+  try {
+    await runScript(
+      stopScript,
+      [],
+      installedCore.previewPath,
+      getJavaRuntimeEnv(await getJavaStatus()),
+    );
+    await waitForRuntimeState(false, STOP_TIMEOUT_MS, 'stopping');
+  } catch (error) {
+    throw new Error(withCoreLogPaths(getErrorMessage(error), installedCore.logPaths));
+  }
 
   publishProgress({
     action: 'idle',

@@ -25,13 +25,17 @@ more broadly.
 - Save loaded wallet metadata in the local Electron app data folder.
 - Keep wallets locked after restart and unlocked only for the current session.
 - Select, unlock, lock, and remove saved wallets.
-- Show node status for the configured node.
+- Show node status for the configured node, including sync phase, target
+  height, blocks remaining, sync percent, and peer counts when Core provides
+  them.
 - Switch between a local node, Previewnet network discovery, and one saved custom node.
 - Install the latest Qortium Core prerelease from GitHub into a desktop managed
   app-data folder.
 - Install a managed Java 17 runtime for desktop Core when system Java is
   missing.
 - Start and stop the managed desktop Previewnet Core.
+- Show managed Core preview log paths for `preview/qortium.log`,
+  `preview/run.log`, and the Windows `preview/run-error.log` when applicable.
 - Browse QDN services, names, and resources from `qdn://` URLs.
 - Load `APP` and `WEBSITE` resources in an embedded viewer.
 - Load image-style QDN resources such as `IMAGE`, `THUMBNAIL`, and
@@ -52,10 +56,28 @@ more broadly.
 - Build a first-pass Android debug APK with Capacitor.
 - Package Linux, Windows, and macOS build resources with the Qortium Home app icon.
 
+## Preview Limits
+
+Previewnet network discovery uses public seed APIs that are intentionally
+read-only. They are suitable for status checks, peer discovery, QDN browsing,
+and read-only API inspection, but restricted write endpoints should use a local
+Core or a custom node controlled by the user.
+
+When network discovery is selected, Home uses the public seeds to find peers and
+prefers a reachable non-seed API peer for general browsing when one is
+available. If only seeds are reachable, QDN/resource requests may be limited by
+the seed's restricted API policy.
+
+Qortium Home does not yet expose chat send, name registration, QDN publish, QDN
+delete, or group join workflows. Those actions are planned for a later
+account-aware `qdnRequest` and approval/signing pass.
+
 ## Planned Work
 
 - Additional derived addresses from the same wallet.
 - `qdnRequest` support with approval prompts for account access and signing.
+- Local-node write workflows after approval prompts exist, including chat send,
+  name registration, QDN publish, QDN delete, and group join.
 - Service-specific viewers for more QDN service types.
 - Stable/mainnet Core profile selection and richer Core maintenance controls.
 - Signed Android APK/AAB release packaging and Android wallet file flows.

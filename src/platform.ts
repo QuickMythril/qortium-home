@@ -30,6 +30,7 @@ type DiscoveryCache = {
 
 type DiscoveryCandidate = {
   height: number;
+  isSeed: boolean;
   isSynchronizing: boolean;
   nodeApiUrl: string;
   peerCount: number;
@@ -301,6 +302,18 @@ function normalizeCandidateNodeApiUrl(value: string) {
   return normalizedUrl.origin;
 }
 
+function isPreviewnetSeedNodeApiUrl(nodeApiUrl: string) {
+  try {
+    const normalizedNodeApiUrl = normalizeCandidateNodeApiUrl(nodeApiUrl);
+
+    return PREVIEWNET_SEED_NODE_API_URLS.map(normalizeCandidateNodeApiUrl).includes(
+      normalizedNodeApiUrl,
+    );
+  } catch {
+    return false;
+  }
+}
+
 function peerAddressToNodeApiUrl(value: unknown) {
   const address = getString(value);
 
@@ -406,6 +419,7 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
       nodeApiUrl,
       status: response.data,
       height: getStatusHeight(response.data),
+      isSeed: isPreviewnetSeedNodeApiUrl(nodeApiUrl),
       isSynchronizing: getStatusIsSynchronizing(response.data),
       peerCount: getStatusPeerCount(response.data),
     };
@@ -416,6 +430,10 @@ async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidat
 
 function rankDiscoveryCandidates(candidates: DiscoveryCandidate[]) {
   return [...candidates].sort((first, second) => {
+    if (first.isSeed !== second.isSeed) {
+      return first.isSeed ? 1 : -1;
+    }
+
     if (first.isSynchronizing !== second.isSynchronizing) {
       return first.isSynchronizing ? 1 : -1;
     }
@@ -435,7 +453,7 @@ async function discoverPreviewnetNode(forceRefresh = false): Promise<DiscoveryCa
     if (cache) {
       const cachedCandidate = await probeNodeCandidate(cache.nodeApiUrl);
 
-      if (cachedCandidate) {
+      if (cachedCandidate && !cachedCandidate.isSeed) {
         return cachedCandidate;
       }
     }
@@ -501,6 +519,10 @@ function getStatusText(status: number) {
 
 function getNodeUnavailableMessage(nodeApiUrl: string) {
   return `Qortium node is unavailable at ${nodeApiUrl}.`;
+}
+
+function getNetworkRestrictionMessage() {
+  return 'The selected Previewnet public seed only allows status and peer discovery. Use a local Core or a custom node for QDN browsing and future write workflows.';
 }
 
 function getNodeApiUrlBase(nodeApiUrl: string) {
@@ -791,15 +813,18 @@ function createFallbackApi(): PlatformApi {
         };
       },
       async listResources(request) {
+        const settings = await readNodeSettings();
         const { response } = await requestConfiguredNode(
-          await readNodeSettings(),
+          settings,
           buildResourcesSearchPath(request),
           'json',
         );
 
         if (response.status < 200 || response.status >= 300) {
           throw new Error(
-            stringifyResponseData(response.data) ||
+            response.status === 403 && settings.mode === 'network'
+              ? getNetworkRestrictionMessage()
+              : stringifyResponseData(response.data) ||
               `QDN resource search failed with HTTP ${response.status}.`,
           );
         }
@@ -850,16 +875,19 @@ function createFallbackApi(): PlatformApi {
         };
       },
       async fetchResourceText(request) {
+        const settings = await readNodeSettings();
         const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
         const { response } = await requestConfiguredNode(
-          await readNodeSettings(),
+          settings,
           buildRawResourcePath(request),
           'text',
         );
 
         if (response.status < 200 || response.status >= 300) {
           throw new Error(
-            stringifyResponseData(response.data) ||
+            response.status === 403 && settings.mode === 'network'
+              ? getNetworkRestrictionMessage()
+              : stringifyResponseData(response.data) ||
               `QDN raw resource request failed with HTTP ${response.status}.`,
           );
         }

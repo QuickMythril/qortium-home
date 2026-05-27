@@ -277,6 +277,10 @@ function getNodeUnavailableMessage(nodeApiUrl: string) {
   return `Qortium node is unavailable at ${nodeApiUrl}.`;
 }
 
+function getNetworkRestrictionMessage() {
+  return 'The selected Previewnet public seed only allows status and peer discovery. Use a local Core or a custom node for QDN browsing and future write workflows.';
+}
+
 function getNodeApiKey() {
   const apiKey = readNodeApiKey();
 
@@ -346,7 +350,11 @@ async function fetchRawResource(
 
   if (!response.ok) {
     const message = (await response.text()).trim();
-    throw new Error(message || `QDN raw resource request failed with HTTP ${response.status}.`);
+    throw new Error(
+      response.status === 403 && connection.mode === 'network'
+        ? getNetworkRestrictionMessage()
+        : message || `QDN raw resource request failed with HTTP ${response.status}.`,
+    );
   }
 
   return response;
@@ -447,11 +455,15 @@ export function registerQdnIpcHandlers() {
   });
 
   ipcMain.handle('qdn:listResources', async (_event, request: QdnResourcesSearchRequest) => {
-    const { response } = await fetchConfiguredNode(buildResourcesSearchPath(request));
+    const { connection, response } = await fetchConfiguredNode(buildResourcesSearchPath(request));
     const text = await response.text();
 
     if (!response.ok) {
-      throw new Error(text || `Qortium node request failed with HTTP ${response.status}.`);
+      throw new Error(
+        response.status === 403 && connection.mode === 'network'
+          ? getNetworkRestrictionMessage()
+          : text || `Qortium node request failed with HTTP ${response.status}.`,
+      );
     }
 
     return text ? (JSON.parse(text) as unknown) : null;

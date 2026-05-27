@@ -22,6 +22,8 @@ Android should continue to use existing nodes and Previewnet network discovery.
 - Stop the managed Core by running the release's bundled preview stop script.
 - When the managed Core starts and `http://127.0.0.1:24891/admin/status` is
   reachable, switch Qortium Home's node mode to the local node.
+- Show the expected preview log paths in the UI and include them in launch
+  errors when start or stop commands fail.
 
 ## Managed Folder
 
@@ -62,7 +64,14 @@ zip, Qortium Home should use:
 - Windows stop: `preview/stop.bat`
 
 The UI should report Java availability and source, installed Core status,
-running status, current local API URL, and install/start/stop progress.
+running status, current local API URL, preview log paths, and
+install/start/stop progress.
+
+The current preview launcher writes:
+
+- Core app log: `preview/qortium.log`
+- Launcher/stdout log: `preview/run.log`
+- Windows stderr log: `preview/run-error.log`
 
 Qortium Home should use Eclipse Temurin / Adoptium Java 17 GA JRE archives for
 the managed runtime. Linux and macOS archives are `.tar.gz`; Windows archives

@@ -1,6 +1,6 @@
 # Qortium Home Project Plan
 
-Last updated: 2026-05-26
+Last updated: 2026-05-27
 
 ## Purpose
 
@@ -52,23 +52,31 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - When `qdnRequest` support is added, prompt the user before approving requests that are not read-only, especially signing requests.
   - Future permission prompts should show the selected account/address that will be used.
 - Qortium Home should be able to manage the local Qortium Core setup:
-  - Start with preinstalled or externally managed core support only.
-  - Add release/prerelease download and local core setup later.
-  - Eventually download the latest Qortium release from GitHub.
-  - Eventually optionally download the latest Qortium prerelease from GitHub.
-  - Eventually install or set up whatever is needed for the downloaded core.
-  - Eventually run scripts included with the core to start it.
-  - Show node status, including whether the node is connected and whether it has peers.
+  - Support preinstalled or externally managed Core.
+  - Download the latest Qortium release or prerelease from GitHub on desktop
+    after explicit user action.
+  - Install a managed Java 17 runtime on desktop when Java is missing.
+  - Install or set up what is needed for the downloaded Core.
+  - Run scripts included with the Core to start and stop it.
+  - Show managed Core preview log paths for launch troubleshooting.
+  - Show node status, including whether the node is connected, whether it has
+    peers, sync phase, target height, remaining blocks, and sync percent.
 - Initial node connection options:
   - Desktop local node: `http://127.0.0.1:24891`.
   - Previewnet network discovery, starting from seed APIs and expanding through `/peers/known`.
   - One saved custom node address entered by the user.
   - The selected node should persist across app restarts.
   - Unreachable custom node URLs may still be saved, with the UI showing the node as unavailable until it can connect.
+  - Previewnet public seed APIs are read-only and should not be presented as a
+    replacement for a local or user-controlled node when write workflows are
+    added.
 - Desktop defaults to the local node but can use Previewnet network discovery when no local node is running.
 - Android should connect to existing nodes only. It does not need to download, install, or run Qortium Core locally in the initial direction.
 - Android defaults to Previewnet network discovery instead of a single hardcoded node.
 - Previewnet seed nodes should expose public read-only API access for `/admin/status` and `/peers/known` so mobile clients can discover usable API nodes.
+- Previewnet network discovery should prefer reachable non-seed API peers for
+  general browsing when available, using public seeds primarily for status and
+  peer discovery.
 - The first Android scaffold uses Capacitor, shares the React UI, and starts with node settings/status plus read-only QDN/API browsing while wallet file flows remain desktop-only.
 - Use `~/git/Qortal-Hub` only as a reference, not as the product to clone.
 - Target distributable builds:
@@ -148,6 +156,8 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Wallet/account creation, saving, loading, and selection.
 - Per-tab account selection for the active page.
 - Future user approval prompts for QDN app requests that require account access, signing, or other non-read-only permissions.
+- Future local-node write workflows for chat send, name registration, QDN
+  publish, QDN delete, and group join after the approval/signing model exists.
 - Local wallet list management.
 - Qortal Hub-compatible wallet import and export.
 - Multiple loaded wallet files.
@@ -161,9 +171,9 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Desktop local node preset for `http://127.0.0.1:24891`.
 - Android Previewnet network discovery through public seed APIs and `/peers/known`.
 - One saved custom node address configuration.
-- Displaying configured node status, connectivity, and peer status.
-- Future downloading and setting up Qortium Core from GitHub releases and prereleases.
-- Future starting of local core through scripts bundled with the core.
+- Displaying configured node status, connectivity, peer counts, and sync progress.
+- Desktop downloading and setting up Qortium Core from GitHub releases and prereleases.
+- Desktop starting and stopping of local Core through scripts bundled with the Core.
 - Android connection to an existing configured node.
 - First-pass Android debug APK builds through Capacitor.
 - Cross-platform packaging setup that can grow toward Linux, macOS, Windows, and Android releases.
@@ -175,8 +185,9 @@ Qortium Home should maintain a human-readable change log, following the pattern 
 - Complex theming or a large design system before the core workflows exist.
 - A full Qortium Core implementation inside the UI app. The UI should manage and launch the core rather than reimplement it.
 - Running Qortium Core locally inside the Android APK for the initial version.
-- Downloading, installing, unpacking, starting, or stopping Qortium Core in the first scaffold.
 - `qdnRequest` request handling in the first scaffold.
+- Chat send, name registration, QDN publish, QDN delete, and group join in the
+  public preview browser surface.
 - Android wallet file creation, wallet file loading, and QDN file downloads in the first Android scaffold.
 
 ## Open Questions

@@ -95,6 +95,12 @@ type QortiumCoreReleases = {
   stable: QortiumCoreReleaseSummary;
 };
 
+type QortiumCoreLogPaths = {
+  appLogPath: string;
+  launcherLogPath: string;
+  windowsErrorLogPath?: string;
+};
+
 type QortiumInstalledCore = {
   assetName: string;
   assetSize: number;
@@ -105,6 +111,7 @@ type QortiumInstalledCore = {
   installPath: string;
   installedAt: string;
   jarPath: string;
+  logPaths: QortiumCoreLogPaths;
   name: string;
   previewPath: string;
   tagName: string;

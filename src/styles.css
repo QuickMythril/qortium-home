@@ -693,17 +693,14 @@ h1 {
   outline: none;
 }
 
-.node-status__button--syncing {
+.node-status__button--behind,
+.node-status__button--connecting,
+.node-status__button--synchronizing {
   color: #7fb7ff;
 }
 
-.node-status__button--minting,
 .node-status__button--synced {
   color: #87d99b;
-}
-
-.node-status__button--checking {
-  color: #e4c06d;
 }
 
 .node-status__button--unavailable {
