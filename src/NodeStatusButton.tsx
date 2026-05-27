@@ -1,6 +1,7 @@
 import { Check, RefreshCw, Server, WifiOff } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { CoreManagerPanel } from './CoreManagerPanel';
 import { Popover } from './components/Popover';
 
 const STATUS_REFRESH_MS = 15_000;
@@ -340,6 +341,11 @@ export function NodeStatusButton({
             </p>
           ) : null}
         </form>
+
+        <CoreManagerPanel
+          onResolvedNodeApiUrl={onResolvedNodeApiUrl}
+          onSaveNodeSettings={onSaveNodeSettings}
+        />
       </div>
     </Popover>
   );

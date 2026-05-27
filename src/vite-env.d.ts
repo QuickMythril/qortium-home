@@ -65,6 +65,79 @@ type QortiumNodeStatusResult =
       ok: false;
     };
 
+type QortiumCoreChannel = 'prerelease' | 'stable';
+
+type QortiumCoreReleaseAsset = {
+  digest: string | null;
+  downloadUrl: string;
+  name: string;
+  size: number;
+};
+
+type QortiumCoreReleaseSummary =
+  | {
+      available: false;
+      channel: QortiumCoreChannel;
+      message: string;
+    }
+  | {
+      asset: QortiumCoreReleaseAsset;
+      available: true;
+      channel: QortiumCoreChannel;
+      htmlUrl: string;
+      name: string;
+      publishedAt: string;
+      tagName: string;
+    };
+
+type QortiumCoreReleases = {
+  prerelease: QortiumCoreReleaseSummary;
+  stable: QortiumCoreReleaseSummary;
+};
+
+type QortiumInstalledCore = {
+  assetName: string;
+  assetSize: number;
+  channel: QortiumCoreChannel;
+  digest: string | null;
+  downloadUrl: string;
+  htmlUrl: string;
+  installPath: string;
+  installedAt: string;
+  jarPath: string;
+  name: string;
+  previewPath: string;
+  tagName: string;
+};
+
+type QortiumCoreJavaStatus = {
+  available: boolean;
+  majorVersion: number | null;
+  path: string;
+  source: 'managed' | 'missing' | 'system' | 'unsupported';
+  version: string | null;
+};
+
+type QortiumCoreRuntimeStatus = {
+  localApiUrl: string;
+  running: boolean;
+  status: unknown;
+};
+
+type QortiumCoreStatus = {
+  installed: QortiumInstalledCore | null;
+  java: QortiumCoreJavaStatus;
+  runtime: QortiumCoreRuntimeStatus;
+  supported: boolean;
+};
+
+type QortiumCoreProgress = {
+  action: 'checking' | 'downloading' | 'extracting' | 'idle' | 'starting' | 'stopping';
+  kind: 'error' | 'info' | 'success';
+  message: string;
+  percent?: number;
+};
+
 type QortiumQdnAuthorizeRequest = {
   identifier?: string;
   name: string;
@@ -150,6 +223,15 @@ interface Window {
       removeWallet: (accountId: string, password?: string) => Promise<QortiumAccountsState>;
     };
     appName: string;
+    core?: {
+      checkReleases: () => Promise<QortiumCoreReleases>;
+      getStatus: () => Promise<QortiumCoreStatus>;
+      install: (request: { channel?: QortiumCoreChannel }) => Promise<QortiumCoreStatus>;
+      installJava: () => Promise<QortiumCoreStatus>;
+      onProgress: (callback: (progress: QortiumCoreProgress) => void) => () => void;
+      start: () => Promise<QortiumCoreStatus>;
+      stop: () => Promise<QortiumCoreStatus>;
+    };
     node: {
       getSettings: () => Promise<QortiumNodeSettings>;
       saveSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;

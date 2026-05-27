@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerAccountIpcHandlers } from './accounts.js';
+import { registerCoreManagerIpcHandlers } from './core-manager.js';
 import { registerNodeSettingsIpcHandlers } from './node-settings.js';
 import { registerQdnIpcHandlers } from './qdn.js';
 
@@ -186,6 +187,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerAccountIpcHandlers();
+  registerCoreManagerIpcHandlers();
   registerNodeSettingsIpcHandlers();
   registerQdnIpcHandlers();
   createWindow();
