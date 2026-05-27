@@ -554,7 +554,7 @@ function getNameValue(value: unknown) {
   return value.name.trim();
 }
 
-async function fetchNodeJson(pathname: string, nodeApiUrl = getNodeApiUrl()) {
+async function fetchNodeJson(pathname: string, nodeApiUrl: string) {
   let response: Response;
 
   try {
@@ -574,14 +574,17 @@ async function fetchNodeJson(pathname: string, nodeApiUrl = getNodeApiUrl()) {
   }
 }
 
-async function getPrimaryName(address: string) {
-  const primaryName = await fetchNodeJson(`/names/primary/${encodeURIComponent(address)}`);
+async function getPrimaryName(address: string, nodeApiUrl: string) {
+  const primaryName = await fetchNodeJson(`/names/primary/${encodeURIComponent(address)}`, nodeApiUrl);
 
   return getNameValue(primaryName);
 }
 
-async function getFirstOwnedName(address: string) {
-  const ownedNames = await fetchNodeJson(`/names/address/${encodeURIComponent(address)}?limit=0`);
+async function getFirstOwnedName(address: string, nodeApiUrl: string) {
+  const ownedNames = await fetchNodeJson(
+    `/names/address/${encodeURIComponent(address)}?limit=0`,
+    nodeApiUrl,
+  );
 
   if (!Array.isArray(ownedNames)) {
     return null;
@@ -606,9 +609,20 @@ async function getAccountProfile(accountId: string): Promise<AccountProfile> {
     throw new Error('Selected account is not saved.');
   }
 
-  const name = (await getPrimaryName(wallet.address)) ?? (await getFirstOwnedName(wallet.address));
+  let nodeApiUrl = '';
+
+  try {
+    nodeApiUrl = await getNodeApiUrl();
+  } catch {
+    nodeApiUrl = '';
+  }
+
+  const name = nodeApiUrl
+    ? (await getPrimaryName(wallet.address, nodeApiUrl)) ??
+      (await getFirstOwnedName(wallet.address, nodeApiUrl))
+    : null;
   const avatarUrl = name
-    ? `${getNodeApiUrl()}/arbitrary/THUMBNAIL/${encodeURIComponent(name)}/qortal_avatar?async=true`
+    ? `${nodeApiUrl}/arbitrary/THUMBNAIL/${encodeURIComponent(name)}/qortal_avatar?async=true`
     : null;
 
   return {

@@ -65,6 +65,7 @@ Qortium Home is intended to be a simple, focused UI for account management and Q
   - One saved custom node address entered by the user.
   - The selected node should persist across app restarts.
   - Unreachable custom node URLs may still be saved, with the UI showing the node as unavailable until it can connect.
+- Desktop defaults to the local node but can use Previewnet network discovery when no local node is running.
 - Android should connect to existing nodes only. It does not need to download, install, or run Qortium Core locally in the initial direction.
 - Android defaults to Previewnet network discovery instead of a single hardcoded node.
 - Previewnet seed nodes should expose public read-only API access for `/admin/status` and `/peers/known` so mobile clients can discover usable API nodes.

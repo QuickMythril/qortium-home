@@ -4,6 +4,13 @@ import path from 'node:path';
 
 const DEFAULT_LOCAL_NODE_API_URL = 'http://127.0.0.1:24891';
 const NODE_SETTINGS_FILE = 'node-settings.json';
+const PREVIEWNET_API_PORT = '24891';
+const PREVIEWNET_SEED_NODE_API_URLS = [
+  'http://146.103.42.59:24891',
+  'http://185.207.104.78:24891',
+];
+const DISCOVERY_TIMEOUT_MS = 5_000;
+const DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
 
 type NodeSettingsMode = 'custom' | 'local' | 'network';
 
@@ -16,6 +23,26 @@ type NodeSettingsRequest = {
   customUrl?: unknown;
   mode?: unknown;
 };
+
+type DiscoveryCandidate = {
+  height: number;
+  isSynchronizing: boolean;
+  nodeApiUrl: string;
+  peerCount: number;
+  status: unknown;
+};
+
+type DiscoveryCache = {
+  expiresAt: number;
+  nodeApiUrl: string;
+};
+
+type NodeConnection = {
+  mode: NodeSettingsMode;
+  nodeApiUrl: string;
+};
+
+let discoveryCache: DiscoveryCache | null = null;
 
 function getString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -97,6 +124,13 @@ function parseStoredNodeSettings(value: unknown): NodeSettings {
     };
   }
 
+  if (rawMode === 'network') {
+    return {
+      customUrl,
+      mode: 'network',
+    };
+  }
+
   if (rawMode === 'local' || rawMode === 'previewnet') {
     return {
       customUrl,
@@ -132,8 +166,8 @@ function normalizeNodeSettingsRequest(value: NodeSettingsRequest): NodeSettings 
     throw new Error('Node settings are required.');
   }
 
-  if (value.mode !== 'local' && value.mode !== 'custom') {
-    throw new Error('Choose either the local node or a custom node.');
+  if (value.mode !== 'local' && value.mode !== 'network' && value.mode !== 'custom') {
+    throw new Error('Choose the local node, Previewnet network, or a custom node.');
   }
 
   const rawCustomUrl = getString(value.customUrl);
@@ -149,17 +183,236 @@ function normalizeNodeSettingsRequest(value: NodeSettingsRequest): NodeSettings 
   };
 }
 
-function resolveNodeApiUrl(settings: NodeSettings) {
-  return settings.mode === 'custom' && settings.customUrl ? settings.customUrl : getLocalNodeApiUrl();
+function getFallbackNodeApiUrl(settings: NodeSettings) {
+  if (settings.mode === 'custom' && settings.customUrl) {
+    return settings.customUrl;
+  }
+
+  if (settings.mode === 'network') {
+    return PREVIEWNET_SEED_NODE_API_URLS[0];
+  }
+
+  return getLocalNodeApiUrl();
 }
 
-function getNodeSettingsSnapshot(settings = readNodeSettings()) {
+function normalizeCandidateNodeApiUrl(value: string) {
+  const normalizedUrl = new URL(normalizeNodeApiUrl(value));
+
+  normalizedUrl.port = PREVIEWNET_API_PORT;
+
+  return normalizedUrl.origin;
+}
+
+function peerAddressToNodeApiUrl(value: unknown) {
+  const address = getString(value);
+
+  if (!address) {
+    return null;
+  }
+
+  try {
+    const candidate = /^https?:\/\//i.test(address) ? address : `http://${address}`;
+    const url = new URL(candidate);
+
+    if (!url.hostname) {
+      return null;
+    }
+
+    url.protocol = 'http:';
+    url.username = '';
+    url.password = '';
+    url.port = PREVIEWNET_API_PORT;
+    url.pathname = '';
+    url.search = '';
+    url.hash = '';
+
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function getKnownPeerAddress(value: unknown) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  return getString((value as { address?: unknown }).address);
+}
+
+function getStatusHeight(status: unknown) {
+  if (!status || typeof status !== 'object') {
+    return 0;
+  }
+
+  const height = (status as { height?: unknown }).height;
+
+  return typeof height === 'number' && Number.isFinite(height) ? height : 0;
+}
+
+function getStatusPeerCount(status: unknown) {
+  if (!status || typeof status !== 'object') {
+    return 0;
+  }
+
+  const statusObject = status as {
+    numberOfConnections?: unknown;
+    numberOfDataConnections?: unknown;
+  };
+  const chainPeers =
+    typeof statusObject.numberOfConnections === 'number' ? statusObject.numberOfConnections : 0;
+  const dataPeers =
+    typeof statusObject.numberOfDataConnections === 'number' ? statusObject.numberOfDataConnections : 0;
+
+  return chainPeers + dataPeers;
+}
+
+function getStatusIsSynchronizing(status: unknown) {
+  if (!status || typeof status !== 'object') {
+    return true;
+  }
+
+  const isSynchronizing = (status as { isSynchronizing?: unknown }).isSynchronizing;
+
+  return typeof isSynchronizing === 'boolean' ? isSynchronizing : true;
+}
+
+async function fetchWithTimeout(url: string) {
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), DISCOVERY_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, {
+      signal: abortController.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchKnownPeerNodeApiUrls(seedNodeApiUrl: string) {
+  try {
+    const response = await fetchWithTimeout(`${seedNodeApiUrl}/peers/known`);
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data: unknown = await response.json();
+
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    return data
+      .map(getKnownPeerAddress)
+      .map(peerAddressToNodeApiUrl)
+      .filter((nodeApiUrl): nodeApiUrl is string => !!nodeApiUrl);
+  } catch {
+    return [];
+  }
+}
+
+async function probeNodeCandidate(nodeApiUrl: string): Promise<DiscoveryCandidate | null> {
+  try {
+    const response = await fetchWithTimeout(`${nodeApiUrl}/admin/status`);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const status: unknown = await response.json();
+
+    return {
+      nodeApiUrl,
+      status,
+      height: getStatusHeight(status),
+      isSynchronizing: getStatusIsSynchronizing(status),
+      peerCount: getStatusPeerCount(status),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function rankDiscoveryCandidates(candidates: DiscoveryCandidate[]) {
+  return [...candidates].sort((first, second) => {
+    if (first.isSynchronizing !== second.isSynchronizing) {
+      return first.isSynchronizing ? 1 : -1;
+    }
+
+    if (first.height !== second.height) {
+      return second.height - first.height;
+    }
+
+    return second.peerCount - first.peerCount;
+  });
+}
+
+async function discoverPreviewnetNode(forceRefresh = false): Promise<DiscoveryCandidate> {
+  if (!forceRefresh && discoveryCache && discoveryCache.expiresAt > Date.now()) {
+    const cachedCandidate = await probeNodeCandidate(discoveryCache.nodeApiUrl);
+
+    if (cachedCandidate) {
+      return cachedCandidate;
+    }
+  }
+
+  const candidateUrls = new Set(PREVIEWNET_SEED_NODE_API_URLS.map(normalizeCandidateNodeApiUrl));
+  const knownPeerResults = await Promise.all(
+    PREVIEWNET_SEED_NODE_API_URLS.map(fetchKnownPeerNodeApiUrls),
+  );
+
+  for (const peerNodeApiUrls of knownPeerResults) {
+    for (const peerNodeApiUrl of peerNodeApiUrls) {
+      candidateUrls.add(peerNodeApiUrl);
+    }
+  }
+
+  const candidates = (
+    await Promise.all([...candidateUrls].map((nodeApiUrl) => probeNodeCandidate(nodeApiUrl)))
+  ).filter((candidate): candidate is DiscoveryCandidate => !!candidate);
+  const selectedCandidate = rankDiscoveryCandidates(candidates)[0];
+
+  if (!selectedCandidate) {
+    throw new Error('No reachable Previewnet node was found.');
+  }
+
+  discoveryCache = {
+    nodeApiUrl: selectedCandidate.nodeApiUrl,
+    expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS,
+  };
+
+  return selectedCandidate;
+}
+
+async function resolveNodeApiUrl(settings: NodeSettings, forceDiscoveryRefresh = false) {
+  if (settings.mode === 'custom' && settings.customUrl) {
+    return settings.customUrl;
+  }
+
+  if (settings.mode === 'network') {
+    return (await discoverPreviewnetNode(forceDiscoveryRefresh)).nodeApiUrl;
+  }
+
+  return getLocalNodeApiUrl();
+}
+
+async function getNodeSettingsSnapshot(settings = readNodeSettings()) {
+  let nodeApiUrl = getFallbackNodeApiUrl(settings);
+
+  try {
+    nodeApiUrl = await resolveNodeApiUrl(settings);
+  } catch {
+    nodeApiUrl = getFallbackNodeApiUrl(settings);
+  }
+
   return {
     ...settings,
     localUrl: getLocalNodeApiUrl(),
-    networkModeAvailable: false,
-    networkSeedUrls: [],
-    nodeApiUrl: resolveNodeApiUrl(settings),
+    networkModeAvailable: true,
+    networkSeedUrls: PREVIEWNET_SEED_NODE_API_URLS,
+    nodeApiUrl,
   };
 }
 
@@ -186,15 +439,35 @@ async function fetchNodeStatus(nodeApiUrl: string) {
 }
 
 async function testNodeSettings(settings: NodeSettings) {
-  const nodeApiUrl = resolveNodeApiUrl(settings);
+  let nodeApiUrl = getFallbackNodeApiUrl(settings);
 
   try {
+    nodeApiUrl = await resolveNodeApiUrl(settings);
+
     return {
       ok: true,
       nodeApiUrl,
       status: await fetchNodeStatus(nodeApiUrl),
     };
   } catch (error) {
+    if (settings.mode === 'network') {
+      try {
+        nodeApiUrl = await resolveNodeApiUrl(settings, true);
+
+        return {
+          ok: true,
+          nodeApiUrl,
+          status: await fetchNodeStatus(nodeApiUrl),
+        };
+      } catch (retryError) {
+        return {
+          ok: false,
+          nodeApiUrl,
+          message: getErrorMessage(retryError),
+        };
+      }
+    }
+
     return {
       ok: false,
       nodeApiUrl,
@@ -203,19 +476,28 @@ async function testNodeSettings(settings: NodeSettings) {
   }
 }
 
-export function getNodeApiUrl() {
-  return resolveNodeApiUrl(readNodeSettings());
+export async function getNodeConnection(forceDiscoveryRefresh = false): Promise<NodeConnection> {
+  const settings = readNodeSettings();
+
+  return {
+    mode: settings.mode,
+    nodeApiUrl: await resolveNodeApiUrl(settings, forceDiscoveryRefresh),
+  };
+}
+
+export async function getNodeApiUrl(forceDiscoveryRefresh = false) {
+  return (await getNodeConnection(forceDiscoveryRefresh)).nodeApiUrl;
 }
 
 export function registerNodeSettingsIpcHandlers() {
   ipcMain.handle('node:getSettings', () => getNodeSettingsSnapshot());
 
-  ipcMain.handle('node:saveSettings', (_event, request: NodeSettingsRequest) => {
+  ipcMain.handle('node:saveSettings', async (_event, request: NodeSettingsRequest) => {
     const settings = normalizeNodeSettingsRequest(request);
 
     writeNodeSettings(settings);
 
-    return getNodeSettingsSnapshot(settings);
+    return await getNodeSettingsSnapshot(settings);
   });
 
   ipcMain.handle('node:testConnection', (_event, request: NodeSettingsRequest) => {

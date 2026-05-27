@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getNodeApiUrl } from './node-settings.js';
+import { getNodeConnection } from './node-settings.js';
 
 const PREVIEW_API_KEY_PATH = path.join(os.homedir(), 'git', 'qortium', 'preview', 'apikey.txt');
 const PUBLIC_QDN_SERVICES = new Set([
@@ -79,6 +79,8 @@ type QdnResourceRequest = {
   path: string;
   service: string;
 };
+
+type NodeConnection = Awaited<ReturnType<typeof getNodeConnection>>;
 
 function expandHomePath(filePath: string) {
   if (filePath === '~') {
@@ -285,7 +287,7 @@ function getNodeApiKey() {
   return apiKey;
 }
 
-async function fetchNode(pathname: string, options: RequestInit = {}, nodeApiUrl = getNodeApiUrl()) {
+async function fetchNode(pathname: string, options: RequestInit = {}, nodeApiUrl: string) {
   let response: Response;
 
   try {
@@ -297,31 +299,49 @@ async function fetchNode(pathname: string, options: RequestInit = {}, nodeApiUrl
   return response;
 }
 
-async function fetchNodeJson(pathname: string, options: RequestInit = {}, nodeApiUrl = getNodeApiUrl()) {
-  const response = await fetchNode(pathname, options, nodeApiUrl);
-  const text = await response.text();
+async function fetchConfiguredNode(pathname: string, options: RequestInit = {}) {
+  const connection = await getNodeConnection();
 
-  if (!response.ok) {
-    throw new Error(text || `Qortium node request failed with HTTP ${response.status}.`);
+  try {
+    return {
+      connection,
+      response: await fetchNode(pathname, options, connection.nodeApiUrl),
+    };
+  } catch (error) {
+    if (connection.mode !== 'network') {
+      throw error;
+    }
+
+    const retryConnection = await getNodeConnection(true);
+
+    if (retryConnection.nodeApiUrl === connection.nodeApiUrl) {
+      throw error;
+    }
+
+    return {
+      connection: retryConnection,
+      response: await fetchNode(pathname, options, retryConnection.nodeApiUrl),
+    };
   }
-
-  return text ? (JSON.parse(text) as unknown) : null;
 }
 
 async function fetchRawResource(
   resource: QdnResourceRequest,
-  apiKey: string,
-  nodeApiUrl: string,
+  connection: NodeConnection,
   attachment = false,
 ) {
+  const headers: Record<string, string> = {};
+
+  if (connection.mode !== 'network') {
+    headers['X-API-KEY'] = getNodeApiKey();
+  }
+
   const response = await fetchNode(
-    buildRawResourceUrl(resource, nodeApiUrl, attachment).replace(nodeApiUrl, ''),
+    buildRawResourceUrl(resource, connection.nodeApiUrl, attachment).replace(connection.nodeApiUrl, ''),
     {
-      headers: {
-        'X-API-KEY': apiKey,
-      },
+      headers,
     },
-    nodeApiUrl,
+    connection.nodeApiUrl,
   );
 
   if (!response.ok) {
@@ -330,6 +350,26 @@ async function fetchRawResource(
   }
 
   return response;
+}
+
+async function fetchConfiguredRawResource(resource: QdnResourceRequest, attachment = false) {
+  const connection = await getNodeConnection();
+
+  try {
+    return await fetchRawResource(resource, connection, attachment);
+  } catch (error) {
+    if (connection.mode !== 'network') {
+      throw error;
+    }
+
+    const retryConnection = await getNodeConnection(true);
+
+    if (retryConnection.nodeApiUrl === connection.nodeApiUrl) {
+      throw error;
+    }
+
+    return await fetchRawResource(resource, retryConnection, attachment);
+  }
 }
 
 async function authorizeResource(
@@ -383,30 +423,44 @@ function buildResourcesSearchPath(request: QdnResourcesSearchRequest) {
 export function registerQdnIpcHandlers() {
   ipcMain.handle('qdn:authorizeResource', async (_event, request: QdnAuthorizeResourceRequest) => {
     const { service, name, identifier } = getAuthorizeRequest(request);
-    const apiKey = getNodeApiKey();
-    const nodeApiUrl = getNodeApiUrl();
+    const connection = await getNodeConnection();
 
-    await authorizeResource(service, name, undefined, apiKey, nodeApiUrl);
+    if (connection.mode === 'network') {
+      return {
+        authorized: true,
+        nodeApiUrl: connection.nodeApiUrl,
+      };
+    }
+
+    const apiKey = getNodeApiKey();
+
+    await authorizeResource(service, name, undefined, apiKey, connection.nodeApiUrl);
 
     if (identifier) {
-      await authorizeResource(service, name, identifier, apiKey, nodeApiUrl);
+      await authorizeResource(service, name, identifier, apiKey, connection.nodeApiUrl);
     }
 
     return {
       authorized: true,
-      nodeApiUrl,
+      nodeApiUrl: connection.nodeApiUrl,
     };
   });
 
   ipcMain.handle('qdn:listResources', async (_event, request: QdnResourcesSearchRequest) => {
-    return fetchNodeJson(buildResourcesSearchPath(request));
+    const { response } = await fetchConfiguredNode(buildResourcesSearchPath(request));
+    const text = await response.text();
+
+    if (!response.ok) {
+      throw new Error(text || `Qortium node request failed with HTTP ${response.status}.`);
+    }
+
+    return text ? (JSON.parse(text) as unknown) : null;
   });
 
   ipcMain.handle('qdn:fetchNodeApi', async (_event, request: NodeApiRequest) => {
-    const nodeApiUrl = getNodeApiUrl();
-    const apiPath = getNodeApiPath(request.path, nodeApiUrl);
+    const apiPath = getNodeApiPath(request.path, 'http://127.0.0.1');
     const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
-    const response = await fetchNode(apiPath, {}, nodeApiUrl);
+    const { response } = await fetchConfiguredNode(apiPath);
     const contentLength = getContentLength(response);
     const contentType = response.headers.get('content-type') ?? '';
 
@@ -447,10 +501,8 @@ export function registerQdnIpcHandlers() {
 
   ipcMain.handle('qdn:fetchResourceText', async (_event, request: QdnRawResourceRequest) => {
     const resource = getRawResourceRequest(request);
-    const apiKey = getNodeApiKey();
-    const nodeApiUrl = getNodeApiUrl();
     const maxBytes = Math.max(0, Math.floor(getNumber(request.maxBytes) ?? 0));
-    const response = await fetchRawResource(resource, apiKey, nodeApiUrl);
+    const response = await fetchConfiguredRawResource(resource);
     const contentLength = getContentLength(response);
     const contentType = response.headers.get('content-type') ?? '';
 
@@ -484,8 +536,6 @@ export function registerQdnIpcHandlers() {
 
   ipcMain.handle('qdn:downloadResource', async (event, request: QdnRawResourceRequest) => {
     const resource = getRawResourceRequest(request);
-    const apiKey = getNodeApiKey();
-    const nodeApiUrl = getNodeApiUrl();
     const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
     const saveDialogOptions = {
       title: 'Save QDN Resource',
@@ -501,7 +551,7 @@ export function registerQdnIpcHandlers() {
       };
     }
 
-    const response = await fetchRawResource(resource, apiKey, nodeApiUrl, true);
+    const response = await fetchConfiguredRawResource(resource, true);
     const content = Buffer.from(await response.arrayBuffer());
     writeFileSync(result.filePath, content);
 

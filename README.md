@@ -175,6 +175,11 @@ read-only API access for `/admin/status` and `/peers/known`. Users can still
 choose a custom LAN or remote node URL. Android wallet file creation/loading and
 QDN file downloads are intentionally still desktop-only.
 
+Desktop still defaults to a local node at `http://127.0.0.1:24891`, but users
+without a local node can also choose Previewnet network discovery from the node
+settings menu. Local node mode keeps using the local API key for authorization
+calls; network discovery is intended for public read-only browsing.
+
 ## QDN Preview Test Data
 
 The development helper below is for local Previewnet testing only:
