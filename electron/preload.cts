@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('qortiumHome', {
       };
     },
   },
+  updates: {
+    getEnvironment: () => ipcRenderer.invoke('updates:getEnvironment'),
+    openReleasePage: (url: string) => ipcRenderer.invoke('updates:openReleasePage', url),
+  },
   node: {
     getSettings: () => ipcRenderer.invoke('node:getSettings'),
     saveSettings: (request: { customUrl?: string; mode: 'custom' | 'local' | 'network' }) =>

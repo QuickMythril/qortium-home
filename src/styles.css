@@ -777,6 +777,7 @@ h1 {
   color: #ef8b84;
 }
 
+.app-updates,
 .core-manager {
   display: grid;
   gap: 12px;
@@ -785,6 +786,7 @@ h1 {
   border-top: 1px solid #344141;
 }
 
+.app-updates__header,
 .core-manager__header {
   display: flex;
   gap: 10px;
@@ -793,6 +795,7 @@ h1 {
   min-width: 0;
 }
 
+.app-updates__title,
 .core-manager__title {
   min-width: 0;
   margin: 0;
@@ -805,12 +808,14 @@ h1 {
   white-space: nowrap;
 }
 
+.app-updates__refresh,
 .core-manager__refresh {
   width: 34px;
   min-width: 34px;
   height: 34px;
 }
 
+.app-updates__details,
 .core-manager__details {
   gap: 8px;
 }
@@ -835,6 +840,7 @@ h1 {
   background: #87d99b;
 }
 
+.app-updates__message,
 .core-manager__progress-text,
 .core-manager__message {
   min-width: 0;
@@ -846,6 +852,7 @@ h1 {
   text-align: right;
 }
 
+.app-updates__actions,
 .core-manager__actions {
   display: flex;
   flex-wrap: wrap;
@@ -854,10 +861,12 @@ h1 {
   min-width: 0;
 }
 
+.app-updates__message--success,
 .core-manager__message--success {
   color: #87d99b;
 }
 
+.app-updates__message--error,
 .core-manager__message--error {
   color: #ef8b84;
 }

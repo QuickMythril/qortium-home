@@ -1,0 +1,220 @@
+import { ExternalLink, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { checkAppUpdates } from './appUpdates';
+
+type UpdateMessage = {
+  kind: 'error' | 'success';
+  text: string;
+} | null;
+
+function formatError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return 'Unable to check app updates.';
+  }
+
+  return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '-';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unitIndex]}`;
+}
+
+function getDefaultChannel(environment: QortiumAppUpdateEnvironment | null): QortiumAppUpdateChannel {
+  return environment?.currentVersion.includes('-') ? 'prerelease' : 'stable';
+}
+
+function getStatusKind(result: QortiumAppUpdateCheckResult | null): UpdateMessage['kind'] {
+  if (!result) {
+    return null;
+  }
+
+  return result.status === 'available' || result.status === 'up-to-date' ? 'success' : 'error';
+}
+
+function getReleasePageUrl(result: QortiumAppUpdateCheckResult | null) {
+  return result?.release?.htmlUrl || '';
+}
+
+export function AppUpdatePanel() {
+  const [environment, setEnvironment] = useState<QortiumAppUpdateEnvironment | null>(null);
+  const [channel, setChannel] = useState<QortiumAppUpdateChannel>('stable');
+  const [result, setResult] = useState<QortiumAppUpdateCheckResult | null>(null);
+  const [message, setMessage] = useState<UpdateMessage>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const releasePageUrl = getReleasePageUrl(result);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    window.qortiumHome.updates
+      .getEnvironment()
+      .then((nextEnvironment) => {
+        if (isDisposed) {
+          return;
+        }
+
+        setEnvironment(nextEnvironment);
+        setChannel(getDefaultChannel(nextEnvironment));
+      })
+      .catch((error) => {
+        if (!isDisposed) {
+          setMessage({
+            kind: 'error',
+            text: formatError(error),
+          });
+        }
+      });
+
+    return () => {
+      isDisposed = true;
+    };
+  }, []);
+
+  const detailRows = useMemo(
+    () => {
+      const rows = [
+        { label: 'Current', value: environment?.currentVersion ?? 'Checking' },
+        { label: 'Platform', value: environment?.platform.label ?? 'Checking' },
+        { label: 'Channel', value: channel === 'stable' ? 'Stable' : 'Prerelease' },
+      ];
+
+      if (result?.release) {
+        rows.push({ label: 'Latest', value: result.release.tagName });
+      }
+
+      if (result?.asset) {
+        rows.push(
+          { label: 'Asset', value: result.asset.name },
+          { label: 'Size', value: formatBytes(result.asset.size) },
+          { label: 'Digest', value: result.asset.digest ?? 'Unavailable' },
+        );
+      }
+
+      return rows;
+    },
+    [channel, environment, result],
+  );
+
+  async function checkForUpdates() {
+    if (!environment) {
+      return;
+    }
+
+    setIsChecking(true);
+    setMessage(null);
+
+    try {
+      const nextResult = await checkAppUpdates(environment, channel);
+      const nextKind = getStatusKind(nextResult);
+
+      setResult(nextResult);
+      setMessage({
+        kind: nextKind ?? 'error',
+        text: nextResult.message,
+      });
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
+    } finally {
+      setIsChecking(false);
+    }
+  }
+
+  async function openReleasePage() {
+    if (!releasePageUrl) {
+      return;
+    }
+
+    try {
+      await window.qortiumHome.updates.openReleasePage(releasePageUrl);
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
+    }
+  }
+
+  return (
+    <section className="app-updates" aria-label="Qortium Home updates">
+      <div className="app-updates__header">
+        <h2 className="app-updates__title">Qortium Home Updates</h2>
+        <button
+          className="icon-button app-updates__refresh"
+          disabled={isChecking || !environment}
+          title="Check for app updates"
+          type="button"
+          onClick={checkForUpdates}
+        >
+          <RefreshCw aria-hidden="true" size={18} strokeWidth={2} />
+          <span className="sr-only">Check for app updates</span>
+        </button>
+      </div>
+
+      <label className="field">
+        <span className="field__label">Release channel</span>
+        <select
+          className="field__input"
+          disabled={isChecking}
+          value={channel}
+          onChange={(event) => {
+            setChannel(event.target.value as QortiumAppUpdateChannel);
+            setResult(null);
+            setMessage(null);
+          }}
+        >
+          <option value="stable">Stable</option>
+          <option value="prerelease">Prerelease</option>
+        </select>
+      </label>
+
+      <dl className="detail-list app-updates__details">
+        {detailRows.map((row) => (
+          <div className="detail-list__row" key={row.label}>
+            <dt className="detail-list__label">{row.label}</dt>
+            <dd className="detail-list__value">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="app-updates__actions">
+        <button
+          className="button button--secondary"
+          disabled={isChecking || !environment}
+          type="button"
+          onClick={checkForUpdates}
+        >
+          <RefreshCw aria-hidden="true" size={18} strokeWidth={2} />
+          {isChecking ? 'Checking' : 'Check now'}
+        </button>
+        {releasePageUrl ? (
+          <button className="button" disabled={isChecking} type="button" onClick={openReleasePage}>
+            <ExternalLink aria-hidden="true" size={18} strokeWidth={2} />
+            Open release
+          </button>
+        ) : null}
+      </div>
+
+      {message ? (
+        <p className={`app-updates__message app-updates__message--${message.kind}`}>
+          {message.text}
+        </p>
+      ) : null}
+    </section>
+  );
+}

@@ -145,6 +145,58 @@ type QortiumCoreProgress = {
   percent?: number;
 };
 
+type QortiumAppUpdateChannel = 'prerelease' | 'stable';
+
+type QortiumAppUpdatePlatformOs = 'android' | 'linux' | 'macos' | 'unsupported' | 'windows';
+
+type QortiumAppUpdatePlatform = {
+  arch: string;
+  label: string;
+  os: QortiumAppUpdatePlatformOs;
+  supported: boolean;
+};
+
+type QortiumAppUpdateEnvironment = {
+  currentVersion: string;
+  platform: QortiumAppUpdatePlatform;
+};
+
+type QortiumAppUpdateAsset = {
+  digest: string | null;
+  downloadUrl: string;
+  name: string;
+  size: number;
+};
+
+type QortiumAppUpdateRelease = {
+  channel: QortiumAppUpdateChannel;
+  htmlUrl: string;
+  name: string;
+  prerelease: boolean;
+  publishedAt: string;
+  tagName: string;
+};
+
+type QortiumAppUpdateStatus =
+  | 'available'
+  | 'error'
+  | 'no-compatible-asset'
+  | 'not-found'
+  | 'unsupported'
+  | 'up-to-date';
+
+type QortiumAppUpdateCheckResult = {
+  asset?: QortiumAppUpdateAsset;
+  channel: QortiumAppUpdateChannel;
+  checkedAt: string;
+  comparison?: number;
+  currentVersion: string;
+  message: string;
+  platform: QortiumAppUpdatePlatform;
+  release?: QortiumAppUpdateRelease;
+  status: QortiumAppUpdateStatus;
+};
+
 type QortiumQdnAuthorizeRequest = {
   identifier?: string;
   name: string;
@@ -238,6 +290,10 @@ interface Window {
       onProgress: (callback: (progress: QortiumCoreProgress) => void) => () => void;
       start: () => Promise<QortiumCoreStatus>;
       stop: () => Promise<QortiumCoreStatus>;
+    };
+    updates: {
+      getEnvironment: () => Promise<QortiumAppUpdateEnvironment>;
+      openReleasePage: (url: string) => Promise<void>;
     };
     node: {
       getSettings: () => Promise<QortiumNodeSettings>;

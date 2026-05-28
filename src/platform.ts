@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
+import packageJson from '../package.json';
 import { PUBLIC_QDN_SERVICES } from './qdn';
 
 const NODE_SETTINGS_KEY = 'qortium-home-node-settings';
@@ -46,6 +47,122 @@ function isAndroid() {
 
 function isNativePlatform() {
   return Capacitor.isNativePlatform();
+}
+
+function getFallbackUpdatePlatformOs(): QortiumAppUpdatePlatformOs {
+  if (isAndroid()) {
+    return 'android';
+  }
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  const platform = window.navigator.platform.toLowerCase();
+
+  if (userAgent.includes('linux') || platform.includes('linux')) {
+    return 'linux';
+  }
+
+  if (userAgent.includes('mac os') || platform.includes('mac')) {
+    return 'macos';
+  }
+
+  if (userAgent.includes('windows') || platform.includes('win')) {
+    return 'windows';
+  }
+
+  return 'unsupported';
+}
+
+function getFallbackUpdateArch(os: QortiumAppUpdatePlatformOs) {
+  if (os === 'android') {
+    return 'universal';
+  }
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  const platform = window.navigator.platform.toLowerCase();
+  const source = `${userAgent} ${platform}`;
+
+  if (source.includes('aarch64') || source.includes('arm64')) {
+    return 'arm64';
+  }
+
+  if (source.includes('x86_64') || source.includes('x64') || source.includes('win64')) {
+    return 'x64';
+  }
+
+  return 'unknown';
+}
+
+function getFallbackUpdatePlatformLabel(os: QortiumAppUpdatePlatformOs, arch: string) {
+  if (os === 'android') {
+    return 'Android';
+  }
+
+  if (os === 'linux') {
+    return `Linux ${arch}`;
+  }
+
+  if (os === 'macos') {
+    return `macOS ${arch}`;
+  }
+
+  if (os === 'windows') {
+    return `Windows ${arch}`;
+  }
+
+  return `Unsupported ${arch}`;
+}
+
+function isFallbackUpdatePlatformSupported(os: QortiumAppUpdatePlatformOs, arch: string) {
+  if (os === 'android') {
+    return true;
+  }
+
+  if (os === 'linux' || os === 'macos') {
+    return arch === 'x64' || arch === 'arm64';
+  }
+
+  if (os === 'windows') {
+    return arch === 'x64';
+  }
+
+  return false;
+}
+
+function getFallbackUpdateEnvironment(): QortiumAppUpdateEnvironment {
+  const os = getFallbackUpdatePlatformOs();
+  const arch = getFallbackUpdateArch(os);
+
+  return {
+    currentVersion: packageJson.version,
+    platform: {
+      arch,
+      label: getFallbackUpdatePlatformLabel(os, arch),
+      os,
+      supported: isFallbackUpdatePlatformSupported(os, arch),
+    },
+  };
+}
+
+function normalizeExternalUrl(value: string) {
+  const rawUrl = value.trim();
+
+  if (!rawUrl) {
+    throw new Error('Release URL is required.');
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error('Release URL is invalid.');
+  }
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error('Release URL must use HTTP or HTTPS.');
+  }
+
+  return url.toString();
 }
 
 function getString(value: unknown) {
@@ -802,6 +919,14 @@ function createFallbackApi(): PlatformApi {
   return {
     appName: 'Qortium Home',
     accounts: createUnsupportedAccountsApi(),
+    updates: {
+      async getEnvironment() {
+        return getFallbackUpdateEnvironment();
+      },
+      async openReleasePage(url) {
+        window.open(normalizeExternalUrl(url), '_blank', 'noopener,noreferrer');
+      },
+    },
     node: {
       async getSettings() {
         return getNodeSettingsSnapshot(await readNodeSettings());
