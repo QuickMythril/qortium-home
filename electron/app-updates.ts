@@ -1,6 +1,40 @@
 import { app, ipcMain, shell } from 'electron';
+import { createHash } from 'node:crypto';
+import { createWriteStream, existsSync } from 'node:fs';
+import { chmod, mkdir, rename, rm, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 type AppUpdatePlatformOs = 'android' | 'linux' | 'macos' | 'unsupported' | 'windows';
+
+type AppUpdateAsset = {
+  digest: string | null;
+  downloadUrl: string;
+  name: string;
+  size: number;
+};
+
+type AppUpdateDownloadRequest = {
+  asset?: unknown;
+  platform?: unknown;
+  releaseTag?: unknown;
+};
+
+const APP_UPDATES_DIR = 'app-updates';
+const GITHUB_USER_AGENT = 'QortiumHome/1.0';
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object';
+}
+
+function getString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function getNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
 
 function getPlatformOs(): AppUpdatePlatformOs {
   if (process.platform === 'linux') {
@@ -16,6 +50,57 @@ function getPlatformOs(): AppUpdatePlatformOs {
   }
 
   return 'unsupported';
+}
+
+function getAppUpdatesPath() {
+  return path.join(app.getPath('userData'), APP_UPDATES_DIR);
+}
+
+function sanitizePathSegment(value: string, fallback: string) {
+  return value.replace(/[^a-z0-9._-]/gi, '_') || fallback;
+}
+
+function normalizeDigest(value: unknown) {
+  const digest = getString(value).toLowerCase();
+
+  return /^sha256:[a-f0-9]{64}$/.test(digest) ? digest : null;
+}
+
+function normalizeDownloadAsset(value: unknown): AppUpdateAsset {
+  if (!isObject(value)) {
+    throw new Error('Update asset is required.');
+  }
+
+  const name = getString(value.name);
+  const downloadUrl = normalizeExternalUrl(value.downloadUrl);
+
+  if (!name) {
+    throw new Error('Update asset name is required.');
+  }
+
+  return {
+    name,
+    downloadUrl,
+    digest: normalizeDigest(value.digest),
+    size: getNumber(value.size),
+  };
+}
+
+function normalizeDownloadRequest(value: AppUpdateDownloadRequest) {
+  if (!isObject(value)) {
+    throw new Error('Update download request is required.');
+  }
+
+  const releaseTag = getString(value.releaseTag);
+
+  if (!releaseTag) {
+    throw new Error('Update release tag is required.');
+  }
+
+  return {
+    asset: normalizeDownloadAsset(value.asset),
+    releaseTag,
+  };
 }
 
 function getPlatformLabel(os: AppUpdatePlatformOs, arch: string) {
@@ -87,7 +172,102 @@ async function openExternalUrl(value: unknown) {
   await shell.openExternal(normalizeExternalUrl(value));
 }
 
+async function downloadAsset(request: AppUpdateDownloadRequest) {
+  const normalizedRequest = normalizeDownloadRequest(request);
+  const releasePath = path.join(getAppUpdatesPath(), sanitizePathSegment(normalizedRequest.releaseTag, 'release'));
+  const fileName = sanitizePathSegment(normalizedRequest.asset.name, 'update');
+  const finalPath = path.join(releasePath, fileName);
+  const partialPath = `${finalPath}.download`;
+
+  await mkdir(releasePath, { recursive: true });
+  await rm(partialPath, { force: true });
+
+  const response = await fetch(normalizedRequest.asset.downloadUrl, {
+    headers: {
+      Accept: 'application/octet-stream,*/*',
+      'User-Agent': GITHUB_USER_AGENT,
+    },
+  });
+
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => '');
+
+    throw new Error(text || `Update download failed with HTTP ${response.status}.`);
+  }
+
+  const hash = createHash('sha256');
+  let receivedBytes = 0;
+  const digestStream = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      receivedBytes += chunk.length;
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+
+  await pipeline(
+    Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
+    digestStream,
+    createWriteStream(partialPath),
+  );
+
+  const digest = `sha256:${hash.digest('hex')}`;
+
+  if (normalizedRequest.asset.digest && normalizedRequest.asset.digest !== digest) {
+    await rm(partialPath, { force: true });
+    throw new Error('Downloaded update did not match the expected GitHub asset digest.');
+  }
+
+  await rm(finalPath, { force: true });
+  await rename(partialPath, finalPath);
+
+  if (/\.appimage$/i.test(finalPath)) {
+    await chmod(finalPath, 0o755).catch(() => undefined);
+  }
+
+  const fileStatus = await stat(finalPath);
+
+  return {
+    canOpen: true,
+    canReveal: true,
+    digest,
+    digestVerified: normalizedRequest.asset.digest === digest,
+    downloadedAt: new Date().toISOString(),
+    fileName,
+    filePath: finalPath,
+    releaseTag: normalizedRequest.releaseTag,
+    size: fileStatus.size || receivedBytes,
+  };
+}
+
+function normalizeDownloadedFilePath(value: unknown) {
+  const filePath = getString(value);
+  const updatesPath = getAppUpdatesPath();
+  const relativePath = path.relative(updatesPath, filePath);
+
+  if (!filePath || path.isAbsolute(relativePath) || relativePath.startsWith('..') || !existsSync(filePath)) {
+    throw new Error('Downloaded update file was not found.');
+  }
+
+  return filePath;
+}
+
+async function openDownloadedFile(value: unknown) {
+  const message = await shell.openPath(normalizeDownloadedFilePath(value));
+
+  if (message) {
+    throw new Error(message);
+  }
+}
+
+function showDownloadedFile(value: unknown) {
+  shell.showItemInFolder(normalizeDownloadedFilePath(value));
+}
+
 export function registerAppUpdateIpcHandlers() {
+  ipcMain.handle('updates:downloadAsset', (_event, request: AppUpdateDownloadRequest = {}) => downloadAsset(request));
   ipcMain.handle('updates:getEnvironment', () => getUpdateEnvironment());
+  ipcMain.handle('updates:openDownloadedFile', (_event, filePath: unknown) => openDownloadedFile(filePath));
   ipcMain.handle('updates:openReleasePage', (_event, url: unknown) => openExternalUrl(url));
+  ipcMain.handle('updates:showDownloadedFile', (_event, filePath: unknown) => showDownloadedFile(filePath));
 }

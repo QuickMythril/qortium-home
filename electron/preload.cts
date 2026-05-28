@@ -40,8 +40,15 @@ contextBridge.exposeInMainWorld('qortiumHome', {
     },
   },
   updates: {
+    downloadAsset: (request: {
+      asset: { digest: string | null; downloadUrl: string; name: string; size: number };
+      platform: { arch: string; label: string; os: string; supported: boolean };
+      releaseTag: string;
+    }) => ipcRenderer.invoke('updates:downloadAsset', request),
     getEnvironment: () => ipcRenderer.invoke('updates:getEnvironment'),
+    openDownloadedFile: (filePath: string) => ipcRenderer.invoke('updates:openDownloadedFile', filePath),
     openReleasePage: (url: string) => ipcRenderer.invoke('updates:openReleasePage', url),
+    showDownloadedFile: (filePath: string) => ipcRenderer.invoke('updates:showDownloadedFile', filePath),
   },
   node: {
     getSettings: () => ipcRenderer.invoke('node:getSettings'),

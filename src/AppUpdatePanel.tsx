@@ -1,4 +1,4 @@
-import { ExternalLink, RefreshCw } from 'lucide-react';
+import { Download, ExternalLink, FolderOpen, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { checkAppUpdates } from './appUpdates';
 
@@ -52,8 +52,10 @@ export function AppUpdatePanel() {
   const [environment, setEnvironment] = useState<QortiumAppUpdateEnvironment | null>(null);
   const [channel, setChannel] = useState<QortiumAppUpdateChannel>('stable');
   const [result, setResult] = useState<QortiumAppUpdateCheckResult | null>(null);
+  const [downloadedUpdate, setDownloadedUpdate] = useState<QortiumAppUpdateDownloadResult | null>(null);
   const [message, setMessage] = useState<UpdateMessage>(null);
   const [isChecking, setIsChecking] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const releasePageUrl = getReleasePageUrl(result);
 
   useEffect(() => {
@@ -103,9 +105,16 @@ export function AppUpdatePanel() {
         );
       }
 
+      if (downloadedUpdate) {
+        rows.push(
+          { label: 'Downloaded', value: downloadedUpdate.fileName },
+          { label: 'Verified', value: downloadedUpdate.digestVerified ? 'Yes' : 'No digest' },
+        );
+      }
+
       return rows;
     },
-    [channel, environment, result],
+    [channel, downloadedUpdate, environment, result],
   );
 
   async function checkForUpdates() {
@@ -114,6 +123,7 @@ export function AppUpdatePanel() {
     }
 
     setIsChecking(true);
+    setDownloadedUpdate(null);
     setMessage(null);
 
     try {
@@ -132,6 +142,66 @@ export function AppUpdatePanel() {
       });
     } finally {
       setIsChecking(false);
+    }
+  }
+
+  async function downloadUpdate() {
+    if (!result?.asset || !result.release) {
+      return;
+    }
+
+    setIsDownloading(true);
+    setMessage(null);
+
+    try {
+      const nextDownloadedUpdate = await window.qortiumHome.updates.downloadAsset({
+        asset: result.asset,
+        platform: result.platform,
+        releaseTag: result.release.tagName,
+      });
+
+      setDownloadedUpdate(nextDownloadedUpdate);
+      setMessage({
+        kind: 'success',
+        text: `Downloaded ${nextDownloadedUpdate.fileName}.`,
+      });
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
+  async function openDownloadedFile() {
+    if (!downloadedUpdate) {
+      return;
+    }
+
+    try {
+      await window.qortiumHome.updates.openDownloadedFile(downloadedUpdate.filePath);
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
+    }
+  }
+
+  async function showDownloadedFile() {
+    if (!downloadedUpdate) {
+      return;
+    }
+
+    try {
+      await window.qortiumHome.updates.showDownloadedFile(downloadedUpdate.filePath);
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: formatError(error),
+      });
     }
   }
 
@@ -175,6 +245,7 @@ export function AppUpdatePanel() {
           onChange={(event) => {
             setChannel(event.target.value as QortiumAppUpdateChannel);
             setResult(null);
+            setDownloadedUpdate(null);
             setMessage(null);
           }}
         >
@@ -195,15 +266,48 @@ export function AppUpdatePanel() {
       <div className="app-updates__actions">
         <button
           className="button button--secondary"
-          disabled={isChecking || !environment}
+          disabled={isChecking || isDownloading || !environment}
           type="button"
           onClick={checkForUpdates}
         >
           <RefreshCw aria-hidden="true" size={18} strokeWidth={2} />
           {isChecking ? 'Checking' : 'Check now'}
         </button>
+        {result?.asset && result.release ? (
+          <button
+            className="button button--secondary"
+            disabled={isChecking || isDownloading}
+            type="button"
+            onClick={downloadUpdate}
+          >
+            <Download aria-hidden="true" size={18} strokeWidth={2} />
+            {isDownloading ? 'Downloading' : 'Download update'}
+          </button>
+        ) : null}
+        {downloadedUpdate?.canOpen ? (
+          <button
+            className="button button--secondary"
+            disabled={isChecking || isDownloading}
+            type="button"
+            onClick={openDownloadedFile}
+          >
+            <ExternalLink aria-hidden="true" size={18} strokeWidth={2} />
+            Open file
+          </button>
+        ) : null}
+        {downloadedUpdate?.canReveal ? (
+          <button
+            className="button button--secondary"
+            disabled={isChecking || isDownloading}
+            type="button"
+            onClick={showDownloadedFile}
+          >
+            <FolderOpen aria-hidden="true" size={18} strokeWidth={2} />
+            Show file
+          </button>
+        ) : null}
         {releasePageUrl ? (
-          <button className="button" disabled={isChecking} type="button" onClick={openReleasePage}>
+          <button className="button" disabled={isChecking || isDownloading} type="button" onClick={openReleasePage}>
             <ExternalLink aria-hidden="true" size={18} strokeWidth={2} />
             Open release
           </button>

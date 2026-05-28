@@ -197,6 +197,24 @@ type QortiumAppUpdateCheckResult = {
   status: QortiumAppUpdateStatus;
 };
 
+type QortiumAppUpdateDownloadRequest = {
+  asset: QortiumAppUpdateAsset;
+  platform: QortiumAppUpdatePlatform;
+  releaseTag: string;
+};
+
+type QortiumAppUpdateDownloadResult = {
+  canOpen: boolean;
+  canReveal: boolean;
+  digest: string;
+  digestVerified: boolean;
+  downloadedAt: string;
+  fileName: string;
+  filePath: string;
+  releaseTag: string;
+  size: number;
+};
+
 type QortiumQdnAuthorizeRequest = {
   identifier?: string;
   name: string;
@@ -292,8 +310,13 @@ interface Window {
       stop: () => Promise<QortiumCoreStatus>;
     };
     updates: {
+      downloadAsset: (
+        request: QortiumAppUpdateDownloadRequest,
+      ) => Promise<QortiumAppUpdateDownloadResult>;
       getEnvironment: () => Promise<QortiumAppUpdateEnvironment>;
+      openDownloadedFile: (filePath: string) => Promise<void>;
       openReleasePage: (url: string) => Promise<void>;
+      showDownloadedFile: (filePath: string) => Promise<void>;
     };
     node: {
       getSettings: () => Promise<QortiumNodeSettings>;

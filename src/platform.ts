@@ -1,10 +1,12 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Preferences } from '@capacitor/preferences';
 import packageJson from '../package.json';
 import { PUBLIC_QDN_SERVICES } from './qdn';
 
 const NODE_SETTINGS_KEY = 'qortium-home-node-settings';
 const NODE_DISCOVERY_CACHE_KEY = 'qortium-home-node-discovery-cache';
+const UPDATE_DOWNLOADS_DIR = 'app-updates';
 const DESKTOP_LOCAL_NODE_API_URL = 'http://127.0.0.1:24891';
 const ANDROID_EMULATOR_LOCAL_NODE_API_URL = 'http://10.0.2.2:24891';
 const PREVIEWNET_API_PORT = '24891';
@@ -163,6 +165,155 @@ function normalizeExternalUrl(value: string) {
   }
 
   return url.toString();
+}
+
+function sanitizePathSegment(value: string, fallback: string) {
+  return value.replace(/[^a-z0-9._-]/gi, '_') || fallback;
+}
+
+function normalizeUpdateDigest(value: string | null) {
+  const digest = getString(value).toLowerCase();
+
+  return /^sha256:[a-f0-9]{64}$/.test(digest) ? digest : null;
+}
+
+function normalizeUpdateDownloadRequest(value: QortiumAppUpdateDownloadRequest) {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Update download request is required.');
+  }
+
+  const releaseTag = getString(value.releaseTag);
+  const asset = value.asset;
+
+  if (!releaseTag) {
+    throw new Error('Update release tag is required.');
+  }
+
+  if (!asset || typeof asset !== 'object') {
+    throw new Error('Update asset is required.');
+  }
+
+  const name = getString(asset.name);
+  const downloadUrl = normalizeExternalUrl(asset.downloadUrl);
+
+  if (!name) {
+    throw new Error('Update asset name is required.');
+  }
+
+  return {
+    asset: {
+      name,
+      downloadUrl,
+      digest: normalizeUpdateDigest(asset.digest),
+      size: getNumber(asset.size) ?? 0,
+    },
+    releaseTag,
+  };
+}
+
+function bytesToHex(bytes: ArrayBuffer) {
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function base64ToBytes(value: string) {
+  const binary = window.atob(value);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function arrayBufferToBase64(value: ArrayBuffer) {
+  const bytes = new Uint8Array(value);
+  let binary = '';
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+
+  return window.btoa(binary);
+}
+
+async function hashBase64(value: string) {
+  return `sha256:${bytesToHex(await window.crypto.subtle.digest('SHA-256', base64ToBytes(value)))}`;
+}
+
+async function fetchAssetAsBase64(asset: QortiumAppUpdateAsset) {
+  if (isNativePlatform()) {
+    const response = await CapacitorHttp.get({
+      url: asset.downloadUrl,
+      responseType: 'arraybuffer',
+      connectTimeout: 30_000,
+      readTimeout: 300_000,
+    });
+
+    if (response.status < 200 || response.status >= 300 || typeof response.data !== 'string') {
+      throw new Error(`Update download failed with HTTP ${response.status}.`);
+    }
+
+    return response.data;
+  }
+
+  const response = await fetch(asset.downloadUrl);
+
+  if (!response.ok) {
+    throw new Error(`Update download failed with HTTP ${response.status}.`);
+  }
+
+  return arrayBufferToBase64(await response.arrayBuffer());
+}
+
+async function downloadUpdateAsset(request: QortiumAppUpdateDownloadRequest) {
+  if (!isNativePlatform()) {
+    throw new Error('Update downloads are available in the desktop app and Android app.');
+  }
+
+  const normalizedRequest = normalizeUpdateDownloadRequest(request);
+  const base64Asset = await fetchAssetAsBase64(normalizedRequest.asset);
+  const digest = await hashBase64(base64Asset);
+
+  if (normalizedRequest.asset.digest && normalizedRequest.asset.digest !== digest) {
+    throw new Error('Downloaded update did not match the expected GitHub asset digest.');
+  }
+
+  const fileName = sanitizePathSegment(normalizedRequest.asset.name, 'update');
+  const relativePath = `${UPDATE_DOWNLOADS_DIR}/${sanitizePathSegment(
+    normalizedRequest.releaseTag,
+    'release',
+  )}/${fileName}`;
+
+  await Filesystem.writeFile({
+    path: relativePath,
+    data: base64Asset,
+    directory: Directory.Data,
+    recursive: true,
+  });
+
+  const [fileStatus, fileUri] = await Promise.all([
+    Filesystem.stat({
+      path: relativePath,
+      directory: Directory.Data,
+    }),
+    Filesystem.getUri({
+      path: relativePath,
+      directory: Directory.Data,
+    }),
+  ]);
+
+  return {
+    canOpen: false,
+    canReveal: false,
+    digest,
+    digestVerified: normalizedRequest.asset.digest === digest,
+    downloadedAt: new Date().toISOString(),
+    fileName,
+    filePath: fileUri.uri,
+    releaseTag: normalizedRequest.releaseTag,
+    size: fileStatus.size || base64ToBytes(base64Asset).byteLength,
+  };
 }
 
 function getString(value: unknown) {
@@ -920,11 +1071,20 @@ function createFallbackApi(): PlatformApi {
     appName: 'Qortium Home',
     accounts: createUnsupportedAccountsApi(),
     updates: {
+      async downloadAsset(request) {
+        return downloadUpdateAsset(request);
+      },
       async getEnvironment() {
         return getFallbackUpdateEnvironment();
       },
+      async openDownloadedFile() {
+        throw new Error('Opening downloaded update files is only available in the desktop app right now.');
+      },
       async openReleasePage(url) {
         window.open(normalizeExternalUrl(url), '_blank', 'noopener,noreferrer');
+      },
+      async showDownloadedFile() {
+        throw new Error('Showing downloaded update files is only available in the desktop app right now.');
       },
     },
     node: {

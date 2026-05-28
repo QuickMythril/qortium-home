@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-28 - app: add verified update downloads
+
+Added manual Qortium Home update downloads on top of the release checker. Desktop can download the matched release asset into Qortium Home app data, verify the GitHub SHA-256 digest, make downloaded AppImages executable, and open or reveal the downloaded file, while Android can download and verify the matched APK into app data without attempting installation yet.
+
 ### 2026-05-28 - release: prepare home preview 2
 
 Updated Qortium Home's package and Android version metadata to `1.0.1-preview.2` so the release-checker build can be published as a newer prerelease target for existing `1.0.1-preview.1` installs.
