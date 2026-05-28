@@ -503,6 +503,7 @@ export function TopBar({
     }
 
     setAddressError('');
+    setAddressValue(parsedUrl.route.displayUrl);
     onNavigate(parsedUrl.route);
   }
 
@@ -542,7 +543,7 @@ export function TopBar({
             autoComplete="off"
             className="top-bar__address-input"
             id="browser-address"
-            placeholder="qdn://APP, home://settings, or /admin/status"
+            placeholder="qdn://APP, core://admin/status, or home://settings"
             spellCheck={false}
             type="text"
             value={addressValue}

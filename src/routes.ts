@@ -31,11 +31,15 @@ type RouteParseResult =
 
 const LOCAL_NODE_HOSTNAMES = new Set(['127.0.0.1', 'localhost']);
 
-function buildNodeApiRoute(path: string, displayUrl = path): NodeApiRoute {
+function buildCoreDisplayUrl(path: string) {
+  return `core://${path.replace(/^\/+/, '')}`;
+}
+
+function buildNodeApiRoute(path: string): NodeApiRoute {
   return {
     kind: 'node-api',
     path,
-    displayUrl,
+    displayUrl: buildCoreDisplayUrl(path),
   };
 }
 
@@ -94,7 +98,27 @@ function parseNodeApiAddress(input: string, nodeApiUrl: string): RouteParseResul
 
   return {
     success: true,
-    route: buildNodeApiRoute(`${url.pathname}${url.search}`, input),
+    route: buildNodeApiRoute(`${url.pathname}${url.search}`),
+  };
+}
+
+function parseCoreAddress(input: string): RouteParseResult | undefined {
+  if (!/^core:\/\//i.test(input)) {
+    return undefined;
+  }
+
+  const pathInput = input.replace(/^core:\/\//i, '').replace(/#.*$/, '').replace(/^\/+/, '');
+
+  if (!pathInput || pathInput.startsWith('?')) {
+    return {
+      success: false,
+      message: 'Enter a Core API path after core://.',
+    };
+  }
+
+  return {
+    success: true,
+    route: buildNodeApiRoute(`/${pathInput}`),
   };
 }
 
@@ -131,6 +155,12 @@ export function parseAppAddress(value: string, nodeApiUrl: string): RouteParseRe
     return homeRoute;
   }
 
+  const coreRoute = parseCoreAddress(input);
+
+  if (coreRoute) {
+    return coreRoute;
+  }
+
   const nodeApiRoute = parseNodeApiAddress(input, nodeApiUrl);
 
   if (nodeApiRoute) {
@@ -139,6 +169,6 @@ export function parseAppAddress(value: string, nodeApiUrl: string): RouteParseRe
 
   return {
     success: false,
-    message: 'Enter a qdn:// link, home://settings, a /node/api/path, or a node API URL.',
+    message: 'Enter a qdn:// link, core:// API path, home://settings, a /node/api/path, or a node API URL.',
   };
 }
