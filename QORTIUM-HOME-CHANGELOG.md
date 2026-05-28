@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-28 - release: prepare home preview 1
+
+Updated Qortium Home's package and Android version metadata to `1.0.1-preview.1` so the first Home prerelease can be published as an update target for the upcoming release checker across desktop and Android builds.
+
 ### 2026-05-27 - app: prefer preview public read nodes
 
 Updated Previewnet network discovery for the current Core public read API behavior. Qortium Home now probes candidate nodes for public QDN/resource search support, prefers nodes that can serve public read requests, keeps Previewnet network mode clearly read-only, and updates the app and documentation language so public network browsing is no longer described as status-only seed discovery.
