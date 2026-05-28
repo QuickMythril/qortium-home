@@ -7,7 +7,17 @@ export type NodeApiRoute = {
   path: string;
 };
 
-export type AppRoute = NodeApiRoute | QdnRoute;
+export type SettingsRoute = {
+  displayUrl: 'home://settings';
+  kind: 'settings';
+};
+
+export const SETTINGS_ROUTE: SettingsRoute = {
+  kind: 'settings',
+  displayUrl: 'home://settings',
+};
+
+export type AppRoute = NodeApiRoute | QdnRoute | SettingsRoute;
 
 type RouteParseResult =
   | {
@@ -88,11 +98,37 @@ function parseNodeApiAddress(input: string, nodeApiUrl: string): RouteParseResul
   };
 }
 
+function parseHomeAddress(input: string): RouteParseResult | undefined {
+  if (!/^home:\/\//i.test(input)) {
+    return undefined;
+  }
+
+  const pathname = input.replace(/^home:\/\//i, '').replace(/^\/+/, '').replace(/\/+$/, '');
+
+  if (pathname.toLowerCase() === 'settings') {
+    return {
+      success: true,
+      route: SETTINGS_ROUTE,
+    };
+  }
+
+  return {
+    success: false,
+    message: 'Only home://settings can be loaded right now.',
+  };
+}
+
 export function parseAppAddress(value: string, nodeApiUrl: string): RouteParseResult {
   const input = value.trim();
 
   if (!input || /^qdn:\/\//i.test(input)) {
     return parseQdnUrl(input);
+  }
+
+  const homeRoute = parseHomeAddress(input);
+
+  if (homeRoute) {
+    return homeRoute;
   }
 
   const nodeApiRoute = parseNodeApiAddress(input, nodeApiUrl);
@@ -103,6 +139,6 @@ export function parseAppAddress(value: string, nodeApiUrl: string): RouteParseRe
 
   return {
     success: false,
-    message: 'Enter a qdn:// link, a /node/api/path, or a node API URL.',
+    message: 'Enter a qdn:// link, home://settings, a /node/api/path, or a node API URL.',
   };
 }

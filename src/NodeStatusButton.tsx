@@ -1,8 +1,5 @@
-import { Check, RefreshCw, Server, WifiOff } from 'lucide-react';
-import type { FormEvent } from 'react';
+import { Check, Server, Settings as SettingsIcon, WifiOff } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { AppUpdatePanel } from './AppUpdatePanel';
-import { CoreManagerPanel } from './CoreManagerPanel';
 import { Popover } from './components/Popover';
 
 const STATUS_REFRESH_MS = 15_000;
@@ -36,15 +33,10 @@ type DetailRow = {
   value: string;
 };
 
-type ConfigMessage = {
-  kind: 'error' | 'success';
-  text: string;
-} | null;
-
 type NodeStatusButtonProps = {
   nodeSettings: QortiumNodeSettings;
+  onOpenSettings: () => void;
   onResolvedNodeApiUrl: (nodeApiUrl: string) => void;
-  onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
 };
 
 function formatError(error: unknown) {
@@ -174,30 +166,13 @@ function formatSyncPhase(syncPhase: null | string | undefined) {
     .join(' ');
 }
 
-function getNodeSettingsRequest(mode: QortiumNodeSettingsMode, customUrl: string) {
-  return {
-    mode,
-    customUrl: customUrl.trim() || undefined,
-  };
-}
-
 export function NodeStatusButton({
   nodeSettings,
+  onOpenSettings,
   onResolvedNodeApiUrl,
-  onSaveNodeSettings,
 }: NodeStatusButtonProps) {
   const [nodeStatus, setNodeStatus] = useState<NodeStatusState>({ state: 'loading' });
-  const [mode, setMode] = useState<QortiumNodeSettingsMode>(nodeSettings.mode);
-  const [customUrl, setCustomUrl] = useState(nodeSettings.customUrl);
-  const [configMessage, setConfigMessage] = useState<ConfigMessage>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
   const popoverId = 'node-status-details';
-
-  useEffect(() => {
-    setMode(nodeSettings.mode);
-    setCustomUrl(nodeSettings.customUrl);
-  }, [nodeSettings]);
 
   useEffect(() => {
     let isMounted = true;
@@ -255,24 +230,18 @@ export function NodeStatusButton({
             { label: 'Status', value: displayStatus },
             { label: 'Phase', value: formatSyncPhase(nodeStatus.data.syncPhase) },
             { label: 'Progress', value: formatPercent(nodeStatus.data.syncPercent) },
-            { label: 'Blocks left', value: formatNumber(nodeStatus.data.syncBlocksRemaining) },
-            { label: 'Target', value: formatNumber(nodeStatus.data.syncTargetHeight) },
             { label: 'Height', value: nodeStatus.data.height.toLocaleString() },
-            { label: 'Chain peers', value: nodeStatus.data.numberOfConnections.toLocaleString() },
-            { label: 'Data peers', value: nodeStatus.data.numberOfDataConnections.toLocaleString() },
+            { label: 'Target', value: formatNumber(nodeStatus.data.syncTargetHeight) },
+            { label: 'Blocks left', value: formatNumber(nodeStatus.data.syncBlocksRemaining) },
+            {
+              label: 'Peers',
+              value: `${nodeStatus.data.numberOfConnections.toLocaleString()} chain / ${nodeStatus.data.numberOfDataConnections.toLocaleString()} data`,
+            },
             { label: 'Minting', value: formatBoolean(nodeStatus.data.isMintingPossible) },
           ]
         : [
             { label: 'Node', value: activeNodeApiUrl },
             { label: 'Status', value: displayStatus },
-            { label: 'Phase', value: '-' },
-            { label: 'Progress', value: '-' },
-            { label: 'Blocks left', value: '-' },
-            { label: 'Target', value: '-' },
-            { label: 'Height', value: '-' },
-            { label: 'Chain peers', value: '-' },
-            { label: 'Data peers', value: '-' },
-            { label: 'Minting', value: '-' },
           ];
 
     if (nodeStatus.state === 'unavailable' && nodeStatus.message) {
@@ -285,54 +254,6 @@ export function NodeStatusButton({
     return rows;
   }, [activeNodeApiUrl, displayStatus, nodeStatus]);
 
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setConfigMessage(null);
-
-    try {
-      const result = await window.qortiumHome.node.testConnection(getNodeSettingsRequest(mode, customUrl));
-
-      if (result.ok) {
-        onResolvedNodeApiUrl(result.nodeApiUrl);
-      }
-
-      setConfigMessage({
-        kind: result.ok ? 'success' : 'error',
-        text: result.ok ? `Connected to ${result.nodeApiUrl}.` : result.message,
-      });
-    } catch (error) {
-      setConfigMessage({
-        kind: 'error',
-        text: formatError(error),
-      });
-    } finally {
-      setIsTesting(false);
-    }
-  }
-
-  async function handleSave(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSaving(true);
-    setConfigMessage(null);
-
-    try {
-      const settings = await onSaveNodeSettings(getNodeSettingsRequest(mode, customUrl));
-
-      onResolvedNodeApiUrl(settings.nodeApiUrl);
-      setConfigMessage({
-        kind: 'success',
-        text: `Using ${settings.nodeApiUrl}.`,
-      });
-    } catch (error) {
-      setConfigMessage({
-        kind: 'error',
-        text: formatError(error),
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   const Icon = displayStatus === 'Synced' ? Check : displayStatus === 'Unavailable' ? WifiOff : Server;
 
   return (
@@ -340,7 +261,7 @@ export function NodeStatusButton({
       className="node-status"
       contentClassName="node-status__popover"
       contentId={popoverId}
-      contentLabel="Node status and settings"
+      contentLabel="Node status"
       renderTrigger={({ contentId, isOpen, toggle }) => (
         <button
           type="button"
@@ -356,94 +277,32 @@ export function NodeStatusButton({
         </button>
       )}
     >
-      <div className="node-status__content">
-        <dl className="detail-list">
-          {detailRows.map((row) => (
-            <div className="detail-list__row" key={row.label}>
-              <dt className="detail-list__label">{row.label}</dt>
-              <dd className="detail-list__value">{row.value}</dd>
-            </div>
-          ))}
-        </dl>
+      {({ close }) => (
+        <div className="node-status__content">
+          <dl className="detail-list">
+            {detailRows.map((row) => (
+              <div className="detail-list__row" key={row.label}>
+                <dt className="detail-list__label">{row.label}</dt>
+                <dd className="detail-list__value">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
 
-        <form className="node-status__settings" onSubmit={handleSave}>
-          <label className="field">
-            <span className="field__label">Node</span>
-            <select
-              className="field__input"
-              value={mode}
-              onChange={(event) => {
-                setMode(event.target.value as QortiumNodeSettingsMode);
-                setConfigMessage(null);
-              }}
-            >
-              <option value="local">Local node</option>
-              {nodeSettings.networkModeAvailable ? (
-                <option value="network">Previewnet network</option>
-              ) : null}
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-
-          {mode === 'custom' ? (
-            <label className="field">
-              <span className="field__label">Custom URL</span>
-              <input
-                className="field__input"
-                placeholder="http://127.0.0.1:24891"
-                spellCheck={false}
-                type="text"
-                value={customUrl}
-                onChange={(event) => {
-                  setCustomUrl(event.target.value);
-                  setConfigMessage(null);
-                }}
-              />
-            </label>
-          ) : mode === 'network' ? (
-            <p className="node-status__preset">
-              <span>Network</span>
-              <span>
-                Public read-only browsing through {nodeSettings.networkSeedUrls.length.toLocaleString()}{' '}
-                seeds
-              </span>
-            </p>
-          ) : (
-            <p className="node-status__preset">
-              <span>Local</span>
-              <span>{nodeSettings.localUrl}</span>
-            </p>
-          )}
-
-          <div className="node-status__settings-actions">
+          <div className="node-status__actions">
             <button
               className="button button--secondary"
-              disabled={isSaving || isTesting}
               type="button"
-              onClick={handleTestConnection}
+              onClick={() => {
+                close();
+                onOpenSettings();
+              }}
             >
-              <RefreshCw aria-hidden="true" size={18} strokeWidth={2} />
-              {isTesting ? 'Testing' : 'Test'}
-            </button>
-            <button className="button" disabled={isSaving || isTesting} type="submit">
-              <Check aria-hidden="true" size={18} strokeWidth={2} />
-              {isSaving ? 'Saving' : 'Save'}
+              <SettingsIcon aria-hidden="true" size={18} strokeWidth={2} />
+              Settings
             </button>
           </div>
-
-          {configMessage ? (
-            <p className={`node-status__message node-status__message--${configMessage.kind}`}>
-              {configMessage.text}
-            </p>
-          ) : null}
-        </form>
-
-        <CoreManagerPanel
-          onResolvedNodeApiUrl={onResolvedNodeApiUrl}
-          onSaveNodeSettings={onSaveNodeSettings}
-        />
-        <AppUpdatePanel />
-      </div>
+        </div>
+      )}
     </Popover>
   );
 }

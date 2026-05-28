@@ -4,8 +4,9 @@ import { AccountsPanel } from './AccountsPanel';
 import { ApiViewer } from './ApiViewer';
 import { QdnExplorer } from './QdnExplorer';
 import { QdnViewer } from './QdnViewer';
+import { SettingsPage } from './SettingsPage';
 import { TopBar } from './TopBar';
-import type { AppRoute } from './routes';
+import { SETTINGS_ROUTE, type AppRoute } from './routes';
 
 type RouteHistoryState = {
   entries: (AppRoute | null)[];
@@ -92,7 +93,8 @@ export function App() {
     accountsState.accounts.find((account) => account.id === activeTab.accountId) ?? null;
   const routeHistory = activeTab.history;
   const currentRoute = routeHistory.entries[routeHistory.index] ?? null;
-  const isViewerRoute = currentRoute !== null;
+  const isSettingsRoute = currentRoute?.kind === 'settings';
+  const isViewerRoute = currentRoute !== null && !isSettingsRoute;
   const canGoBack = routeHistory.index > 0;
   const canGoForward = routeHistory.index < routeHistory.entries.length - 1;
 
@@ -282,6 +284,10 @@ export function App() {
     }));
   }
 
+  function openSettings() {
+    navigateToRoute(SETTINGS_ROUTE);
+  }
+
   function addTab() {
     const tab = createBrowserTab(getDefaultAccountId(accountsState));
 
@@ -400,20 +406,28 @@ export function App() {
         onGoForward={goForward}
         onGoToHistoryIndex={goToHistoryIndex}
         onNavigate={navigateToRoute}
+        onOpenSettings={openSettings}
         onReorderTab={reorderTab}
         onResolvedNodeApiUrl={updateResolvedNodeApiUrl}
-        onSaveNodeSettings={saveNodeSettings}
         onSelectTab={selectTab}
         nodeSettings={nodeSettings}
       />
       <section
-        className={`app-main${isViewerRoute ? ' app-main--viewer' : ''}`}
-        aria-label={isViewerRoute ? 'Browser page' : 'Qortium Home'}
+        className={`app-main${isViewerRoute ? ' app-main--viewer' : ''}${
+          isSettingsRoute ? ' app-main--settings' : ''
+        }`}
+        aria-label={isSettingsRoute ? 'Settings' : isViewerRoute ? 'Browser page' : 'Qortium Home'}
       >
         {currentRoute?.kind === 'node-api' ? (
           <ApiViewer route={currentRoute} />
         ) : currentRoute?.kind === 'resource' ? (
           <QdnViewer nodeApiUrl={nodeSettings.nodeApiUrl} resource={currentRoute.resource} />
+        ) : currentRoute?.kind === 'settings' ? (
+          <SettingsPage
+            nodeSettings={nodeSettings}
+            onResolvedNodeApiUrl={updateResolvedNodeApiUrl}
+            onSaveNodeSettings={saveNodeSettings}
+          />
         ) : currentRoute ? (
           <QdnExplorer nodeApiUrl={nodeSettings.nodeApiUrl} route={currentRoute} onNavigate={navigateToRoute} />
         ) : (

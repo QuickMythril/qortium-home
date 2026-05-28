@@ -22,9 +22,9 @@ type TopBarProps = {
   onGoForward: () => void;
   onGoToHistoryIndex: (index: number) => void;
   onNavigate: (route: AppRoute) => void;
+  onOpenSettings: () => void;
   onReorderTab: (draggedTabId: string, targetTabId: string, dropPosition: TabDropPosition) => void;
   onResolvedNodeApiUrl: (nodeApiUrl: string) => void;
-  onSaveNodeSettings: (request: QortiumNodeSettingsRequest) => Promise<QortiumNodeSettings>;
   onSelectTab: (tabId: string) => void;
 };
 
@@ -479,9 +479,9 @@ export function TopBar({
   onGoForward,
   onGoToHistoryIndex,
   onNavigate,
+  onOpenSettings,
   onReorderTab,
   onResolvedNodeApiUrl,
-  onSaveNodeSettings,
   onSelectTab,
 }: TopBarProps) {
   const [addressValue, setAddressValue] = useState('');
@@ -542,7 +542,7 @@ export function TopBar({
             autoComplete="off"
             className="top-bar__address-input"
             id="browser-address"
-            placeholder="qdn://APP, qdn://*/name, or /admin/status"
+            placeholder="qdn://APP, home://settings, or /admin/status"
             spellCheck={false}
             type="text"
             value={addressValue}
@@ -561,8 +561,8 @@ export function TopBar({
       <AccountChip account={activeAccount} nodeApiUrl={nodeSettings.nodeApiUrl} />
       <NodeStatusButton
         nodeSettings={nodeSettings}
+        onOpenSettings={onOpenSettings}
         onResolvedNodeApiUrl={onResolvedNodeApiUrl}
-        onSaveNodeSettings={onSaveNodeSettings}
       />
     </header>
   );

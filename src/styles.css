@@ -155,6 +155,31 @@ h1 {
   padding: 0;
 }
 
+.app-main--settings {
+  place-items: start center;
+  overflow-y: auto;
+}
+
+.settings-page {
+  display: grid;
+  gap: 24px;
+  align-self: start;
+  width: min(100%, 980px);
+  min-width: 0;
+}
+
+.settings-page__header {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-page__sections {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -719,7 +744,7 @@ h1 {
 }
 
 .node-status__popover {
-  width: min(540px, calc(100vw - 40px));
+  width: min(420px, calc(100vw - 40px));
 }
 
 .node-status__content {
@@ -728,15 +753,13 @@ h1 {
   min-width: 0;
 }
 
-.node-status__settings {
-  display: grid;
-  gap: 12px;
+.node-status__actions {
+  display: flex;
+  justify-content: flex-end;
   min-width: 0;
-  padding-top: 14px;
-  border-top: 1px solid #344141;
 }
 
-.node-status__preset {
+.node-settings__preset {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 12px;
@@ -746,37 +769,14 @@ h1 {
   line-height: var(--line-height-small);
 }
 
-.node-status__preset span:last-child {
+.node-settings__preset span:last-child {
   min-width: 0;
   overflow-wrap: anywhere;
   color: #f4f0e8;
   text-align: right;
 }
 
-.node-status__settings-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.node-status__message {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-small);
-  text-align: right;
-}
-
-.node-status__message--success {
-  color: #87d99b;
-}
-
-.node-status__message--error {
-  color: #ef8b84;
-}
-
+.node-settings,
 .app-updates,
 .core-manager {
   display: grid;
@@ -786,6 +786,7 @@ h1 {
   border-top: 1px solid #344141;
 }
 
+.node-settings__header,
 .app-updates__header,
 .core-manager__header {
   display: flex;
@@ -795,6 +796,7 @@ h1 {
   min-width: 0;
 }
 
+.node-settings__title,
 .app-updates__title,
 .core-manager__title {
   min-width: 0;
@@ -815,9 +817,16 @@ h1 {
   height: 34px;
 }
 
+.node-settings__details,
 .app-updates__details,
 .core-manager__details {
   gap: 8px;
+}
+
+.node-settings__form {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .core-manager__progress {
@@ -840,6 +849,7 @@ h1 {
   background: #87d99b;
 }
 
+.node-settings__message,
 .app-updates__message,
 .core-manager__progress-text,
 .core-manager__message {
@@ -852,6 +862,7 @@ h1 {
   text-align: right;
 }
 
+.node-settings__actions,
 .app-updates__actions,
 .core-manager__actions {
   display: flex;
@@ -861,11 +872,13 @@ h1 {
   min-width: 0;
 }
 
+.node-settings__message--success,
 .app-updates__message--success,
 .core-manager__message--success {
   color: #87d99b;
 }
 
+.node-settings__message--error,
 .app-updates__message--error,
 .core-manager__message--error {
   color: #ef8b84;
