@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-29 - app: clarify android update downloads
+
+Clarified the Android update download state so a verified APK download shows the saved app-storage URI, marks installation as a manual release-page step for now, and keeps the desktop open/reveal actions limited to desktop downloads.
+
 ### 2026-05-29 - build: add release asset checker
 
 Added a release asset checker script that verifies the expected local Linux, macOS, Windows, and Android artifacts for the current Home version, prints their SHA-256 hashes, checks the GitHub release assets and digests, and summarizes the platform update matrix before a prerelease is considered complete.

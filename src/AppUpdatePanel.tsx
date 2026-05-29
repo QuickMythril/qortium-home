@@ -48,6 +48,23 @@ function getReleasePageUrl(result: QortiumAppUpdateCheckResult | null) {
   return result?.release?.htmlUrl || '';
 }
 
+function isAndroidPlatform(platform: QortiumAppUpdatePlatform | undefined) {
+  return platform?.os === 'android';
+}
+
+function getDownloadedUpdateMessage(
+  downloadedUpdate: QortiumAppUpdateDownloadResult,
+  platform: QortiumAppUpdatePlatform | undefined,
+) {
+  if (isAndroidPlatform(platform)) {
+    return `Downloaded and verified ${downloadedUpdate.fileName}. Android install handoff is manual for now; use Open release to install from the browser.`;
+  }
+
+  return downloadedUpdate.digestVerified
+    ? `Downloaded and verified ${downloadedUpdate.fileName}.`
+    : `Downloaded ${downloadedUpdate.fileName}.`;
+}
+
 export function AppUpdatePanel() {
   const [environment, setEnvironment] = useState<QortiumAppUpdateEnvironment | null>(null);
   const [channel, setChannel] = useState<QortiumAppUpdateChannel>('stable');
@@ -57,6 +74,7 @@ export function AppUpdatePanel() {
   const [isChecking, setIsChecking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const releasePageUrl = getReleasePageUrl(result);
+  const updatePlatform = result?.platform ?? environment?.platform;
 
   useEffect(() => {
     let isDisposed = false;
@@ -108,13 +126,19 @@ export function AppUpdatePanel() {
       if (downloadedUpdate) {
         rows.push(
           { label: 'Downloaded', value: downloadedUpdate.fileName },
+          ...(isAndroidPlatform(updatePlatform)
+            ? [
+                { label: 'Saved', value: downloadedUpdate.filePath },
+                { label: 'Install', value: 'Manual from release page' },
+              ]
+            : []),
           { label: 'Verified', value: downloadedUpdate.digestVerified ? 'Yes' : 'No digest' },
         );
       }
 
       return rows;
     },
-    [channel, downloadedUpdate, environment, result],
+    [channel, downloadedUpdate, environment, result, updatePlatform],
   );
 
   async function checkForUpdates() {
@@ -163,7 +187,7 @@ export function AppUpdatePanel() {
       setDownloadedUpdate(nextDownloadedUpdate);
       setMessage({
         kind: 'success',
-        text: `Downloaded ${nextDownloadedUpdate.fileName}.`,
+        text: getDownloadedUpdateMessage(nextDownloadedUpdate, result.platform),
       });
     } catch (error) {
       setMessage({
