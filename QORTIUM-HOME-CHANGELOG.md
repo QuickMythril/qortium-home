@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-29 - release: prepare home preview 5
+
+Updated Qortium Home's package and Android version metadata to `1.0.1-preview.5` so the Android update install handoff can be published as the next prerelease target across the desktop and Android release assets.
+
 ### 2026-05-29 - app: add android update install handoff
 
 Added an Android update install handoff after verified APK downloads. Android now exposes downloaded Home update APKs from Qortium Home app data through the native package installer, prompts users to allow app installs when Android requires that permission, and labels the Settings update action as Install APK instead of sending users back to the release page.

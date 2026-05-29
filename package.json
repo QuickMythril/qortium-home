@@ -1,6 +1,6 @@
 {
   "name": "qortium-home",
-  "version": "1.0.1-preview.4",
+  "version": "1.0.1-preview.5",
   "private": true,
   "license": "0BSD",
   "description": "A simple Qortium Home desktop app.",
