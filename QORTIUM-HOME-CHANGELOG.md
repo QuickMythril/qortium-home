@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-28 - app: require explicit address schemes
+
+Required Qortium Home address navigation to use explicit `qdn://`, `core://`, or `home://` schemes instead of raw Core API paths or node HTTP URLs. The address bar now offers small scheme completions for QDN, Core, and Home addresses so users can fill the right prefix without Home guessing ambiguous bare paths.
+
 ### 2026-05-28 - app: add core api address scheme
 
 Added `core://` as the canonical address scheme for viewing endpoints on the currently selected Core node. Existing `/admin/status` paths and matching node HTTP URLs still work, but Home now displays node API history and endpoint copies with `core://` addresses to make the selected-node behavior explicit.

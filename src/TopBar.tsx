@@ -50,6 +50,20 @@ type HistoryMenuItem = {
 };
 
 const accountProfileCache = new Map<string, Promise<QortiumAccountProfile>>();
+const ADDRESS_SCHEME_SUGGESTIONS = [
+  {
+    description: 'QDN',
+    value: 'qdn://',
+  },
+  {
+    description: 'Core',
+    value: 'core://',
+  },
+  {
+    description: 'Home',
+    value: 'home://settings',
+  },
+];
 
 function formatHistoryEntry(entry: AppRoute | null) {
   return entry?.displayUrl ?? 'Qortium Home';
@@ -78,6 +92,26 @@ function getDisplayInitial(value: string) {
   const character = value.trim().charAt(0);
 
   return character ? character.toUpperCase() : '?';
+}
+
+function getAddressSchemeSuggestion(value: string) {
+  const input = value.trim().toLowerCase();
+
+  if (!input) {
+    return null;
+  }
+
+  return (
+    ADDRESS_SCHEME_SUGGESTIONS.find((suggestion) => {
+      const suggestionValue = suggestion.value.toLowerCase();
+      const scheme = suggestionValue.slice(0, suggestionValue.indexOf(':'));
+
+      return (
+        input !== suggestionValue &&
+        (suggestionValue.startsWith(input) || scheme.startsWith(input))
+      );
+    }) ?? null
+  );
 }
 
 function getAccountTooltip(account: QortiumAccountSummary, profile: QortiumAccountProfile | null) {
@@ -486,16 +520,31 @@ export function TopBar({
 }: TopBarProps) {
   const [addressValue, setAddressValue] = useState('');
   const [addressError, setAddressError] = useState('');
+  const addressSuggestion = getAddressSchemeSuggestion(addressValue);
 
   useEffect(() => {
     setAddressValue(currentRoute?.displayUrl ?? '');
     setAddressError('');
   }, [activeTabId, currentRoute]);
 
+  function applyAddressSuggestion() {
+    if (!addressSuggestion) {
+      return;
+    }
+
+    setAddressValue(addressSuggestion.value);
+    setAddressError('');
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const parsedUrl = parseAppAddress(addressValue, nodeSettings.nodeApiUrl);
+    if (addressSuggestion) {
+      applyAddressSuggestion();
+      return;
+    }
+
+    const parsedUrl = parseAppAddress(addressValue);
 
     if (!parsedUrl.success) {
       setAddressError(parsedUrl.message);
@@ -551,12 +600,29 @@ export function TopBar({
               setAddressValue(event.target.value);
               setAddressError('');
             }}
+            onKeyDown={(event) => {
+              if (event.key === 'Tab' && addressSuggestion) {
+                event.preventDefault();
+                applyAddressSuggestion();
+              }
+            }}
           />
         </div>
         <button className="icon-button top-bar__go-button" title="Load address" type="submit">
           <ArrowRight aria-hidden="true" size={20} strokeWidth={2} />
           <span className="sr-only">Load address</span>
         </button>
+        {addressSuggestion ? (
+          <button
+            className="top-bar__address-suggestion"
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={applyAddressSuggestion}
+          >
+            <span className="top-bar__address-suggestion-value">{addressSuggestion.value}</span>
+            <span className="top-bar__address-suggestion-label">{addressSuggestion.description}</span>
+          </button>
+        ) : null}
         {addressError ? <p className="top-bar__error">{addressError}</p> : null}
       </form>
       <AccountChip account={activeAccount} nodeApiUrl={nodeSettings.nodeApiUrl} />
