@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-29 - app: add android update install handoff
+
+Added an Android update install handoff after verified APK downloads. Android now exposes downloaded Home update APKs from Qortium Home app data through the native package installer, prompts users to allow app installs when Android requires that permission, and labels the Settings update action as Install APK instead of sending users back to the release page.
+
 ### 2026-05-29 - app: clarify android update downloads
 
 Clarified the Android update download state so a verified APK download shows the saved app-storage URI, marks installation as a manual release-page step for now, and keeps the desktop open/reveal actions limited to desktop downloads.

@@ -57,12 +57,16 @@ function getDownloadedUpdateMessage(
   platform: QortiumAppUpdatePlatform | undefined,
 ) {
   if (isAndroidPlatform(platform)) {
-    return `Downloaded and verified ${downloadedUpdate.fileName}. Android install handoff is manual for now; use Open release to install from the browser.`;
+    return `Downloaded and verified ${downloadedUpdate.fileName}. Tap Install APK to continue with Android's installer.`;
   }
 
   return downloadedUpdate.digestVerified
     ? `Downloaded and verified ${downloadedUpdate.fileName}.`
     : `Downloaded ${downloadedUpdate.fileName}.`;
+}
+
+function getOpenDownloadedFileLabel(platform: QortiumAppUpdatePlatform | undefined) {
+  return isAndroidPlatform(platform) ? 'Install APK' : 'Open file';
 }
 
 export function AppUpdatePanel() {
@@ -129,7 +133,7 @@ export function AppUpdatePanel() {
           ...(isAndroidPlatform(updatePlatform)
             ? [
                 { label: 'Saved', value: downloadedUpdate.filePath },
-                { label: 'Install', value: 'Manual from release page' },
+                { label: 'Install', value: downloadedUpdate.canOpen ? 'Ready' : 'Unavailable' },
               ]
             : []),
           { label: 'Verified', value: downloadedUpdate.digestVerified ? 'Yes' : 'No digest' },
@@ -316,7 +320,7 @@ export function AppUpdatePanel() {
             onClick={openDownloadedFile}
           >
             <ExternalLink aria-hidden="true" size={18} strokeWidth={2} />
-            Open file
+            {getOpenDownloadedFileLabel(updatePlatform)}
           </button>
         ) : null}
         {downloadedUpdate?.canReveal ? (

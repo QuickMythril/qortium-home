@@ -1,4 +1,4 @@
-import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core';
+import { Capacitor, CapacitorHttp, registerPlugin, type HttpResponse } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Preferences } from '@capacitor/preferences';
 import packageJson from '../package.json';
@@ -42,6 +42,12 @@ type DiscoveryCandidate = {
   status: unknown;
   supportsPublicReads: boolean;
 };
+
+type UpdateInstallerPlugin = {
+  installApk: (request: { filePath: string }) => Promise<{ opened?: boolean }>;
+};
+
+const UpdateInstaller = registerPlugin<UpdateInstallerPlugin>('UpdateInstaller');
 
 function isAndroid() {
   return Capacitor.getPlatform() === 'android';
@@ -304,7 +310,7 @@ async function downloadUpdateAsset(request: QortiumAppUpdateDownloadRequest) {
   ]);
 
   return {
-    canOpen: false,
+    canOpen: isAndroid(),
     canReveal: false,
     digest,
     digestVerified: normalizedRequest.asset.digest === digest,
@@ -1077,7 +1083,18 @@ function createFallbackApi(): PlatformApi {
       async getEnvironment() {
         return getFallbackUpdateEnvironment();
       },
-      async openDownloadedFile() {
+      async openDownloadedFile(filePath) {
+        if (isAndroid()) {
+          const normalizedFilePath = getString(filePath);
+
+          if (!normalizedFilePath) {
+            throw new Error('Downloaded update path is required.');
+          }
+
+          await UpdateInstaller.installApk({ filePath: normalizedFilePath });
+          return;
+        }
+
         throw new Error('Opening downloaded update files is only available in the desktop app right now.');
       },
       async openReleasePage(url) {
