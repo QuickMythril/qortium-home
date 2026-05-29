@@ -35,6 +35,10 @@ clear scope.
 
 ## Change Entries
 
+### 2026-05-29 - build: add release asset checker
+
+Added a release asset checker script that verifies the expected local Linux, macOS, Windows, and Android artifacts for the current Home version, prints their SHA-256 hashes, checks the GitHub release assets and digests, and summarizes the platform update matrix before a prerelease is considered complete.
+
 ### 2026-05-29 - release: prepare home preview 4
 
 Updated Qortium Home's package and Android version metadata to `1.0.1-preview.4` so the Settings page, explicit `core://` address flow, remote Mac packaging helper, and complete cross-platform artifact set can be published as the next prerelease target for update-checker testing.

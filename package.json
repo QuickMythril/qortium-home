@@ -27,6 +27,7 @@
     "android:sync": "npm run build:renderer && cap sync android",
     "android:open": "npm run android:sync && cap open android",
     "dist:android:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "release:check": "node scripts/check-release-assets.mjs",
     "qdn:bootstrap-test-data": "node scripts/bootstrap-qdn-test-data.mjs",
     "preview": "vite preview"
   },
